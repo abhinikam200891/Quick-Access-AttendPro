@@ -674,3 +674,7 @@ a.btn-primary:active {
   transform: translateY(-1px);
 }
 
+.is-hidden {
+  display: none !important;
+}
+

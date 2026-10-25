@@ -1522,6 +1522,11 @@
   flex-direction: column;
 }
 
+.auth-form.is-hidden,
+.admin-auth-screen.is-hidden {
+  display: none !important;
+}
+
 .auth-alert {
   padding: 10px 14px;
   border-radius: var(--radius-md);
