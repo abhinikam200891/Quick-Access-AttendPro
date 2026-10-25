@@ -1,5 +1,5 @@
 // Quick Access AttendPro Service Worker
-const CACHE_NAME = 'qa-attendpro-cache-v1';
+const CACHE_NAME = 'qa-attendpro-cache-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

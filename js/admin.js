@@ -120,7 +120,9 @@ function setupTabs() {
       state.currentTab = target;
 
       document.querySelectorAll('.tab-content-panel').forEach((panel) => {
-        panel.style.display = panel.id === `tab-${target}` ? 'block' : 'none';
+        const isMatch = panel.id === `tab-${target}`;
+        panel.classList.toggle('active', isMatch);
+        panel.style.display = isMatch ? 'block' : 'none';
       });
 
       if (target === 'attendance') renderAttendanceTable();
@@ -129,6 +131,15 @@ function setupTabs() {
       if (target === 'masters') renderMembersTable();
       if (target === 'audit') renderAuditLogsTable();
     });
+  });
+
+  // Ensure active tab panel is visible on initial page load
+  const activeTabBtn = document.querySelector('.tab-btn.active') || tabs[0];
+  const initialTarget = activeTabBtn?.dataset.tab || 'events';
+  document.querySelectorAll('.tab-content-panel').forEach((panel) => {
+    const isMatch = panel.id === `tab-${initialTarget}`;
+    panel.classList.toggle('active', isMatch);
+    panel.style.display = isMatch ? 'block' : 'none';
   });
 }
 
