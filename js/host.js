@@ -176,10 +176,73 @@ function setupSelectorListeners(events) {
   });
 }
 
+function getOrCreateLocalDeviceId() {
+  const STORAGE_KEY = 'attendpro_beacon_device_id';
+  let deviceId = localStorage.getItem(STORAGE_KEY);
+  if (!deviceId) {
+    deviceId = 'dev_' + (crypto?.randomUUID ? crypto.randomUUID() : (Math.random().toString(36).slice(2) + Date.now().toString(36)));
+    localStorage.setItem(STORAGE_KEY, deviceId);
+  }
+  return deviceId;
+}
+
+function showDeviceLockScreen(event, host, lockResult) {
+  // Stop active timers if any
+  if (hostState.timerInterval) clearInterval(hostState.timerInterval);
+
+  // Hide selector and beacon panels
+  document.getElementById('hostSelectorCard')?.classList.add('is-hidden');
+  document.getElementById('hostProfileCard')?.classList.add('is-hidden');
+  document.getElementById('hostMetricsBar')?.classList.add('is-hidden');
+  document.getElementById('qrStageCard')?.classList.add('is-hidden');
+  document.getElementById('hostSelfCard')?.classList.add('is-hidden');
+  document.getElementById('hostSwitchWrap')?.classList.add('is-hidden');
+
+  // Populate lock info
+  const card = document.getElementById('deviceLockCard');
+  if (card) {
+    document.getElementById('lockedHostName').textContent = host.full_name || 'Authorized Staff';
+    document.getElementById('lockedHostCode').textContent = host.member_code || '-';
+    document.getElementById('lockedStationName').textContent = host.station_name || 'Station #1';
+    card.classList.remove('is-hidden');
+
+    const btnRetry = document.getElementById('btnRetryDeviceLock');
+    if (btnRetry) {
+      btnRetry.onclick = async () => {
+        btnRetry.disabled = true;
+        btnRetry.textContent = 'Checking Status...';
+        const clientDeviceId = getOrCreateLocalDeviceId();
+        const recheck = await dbService.claimHostDeviceLock(event.id, host.member_code, clientDeviceId);
+        if (recheck.success) {
+          card.classList.add('is-hidden');
+          showToast('Device lock confirmed! Welcome.', 'success');
+          launchBeacon(event, recheck.host || host);
+        } else {
+          showToast('Still locked to another phone. Ask your Admin to reset the device lock in Event Management.', 'warning');
+          btnRetry.disabled = false;
+          btnRetry.textContent = '🔄 Check Again & Unlock Beacon';
+        }
+      };
+    }
+  }
+}
+
 /**
  * Launches the Active Rotating QR Beacon Display
  */
 async function launchBeacon(event, host) {
+  // Device Lock Protection: verify if this device is authorized
+  const clientDeviceId = getOrCreateLocalDeviceId();
+  const lockResult = await dbService.claimHostDeviceLock(event.id, host.member_code, clientDeviceId);
+
+  if (!lockResult.success && lockResult.error === 'DEVICE_LOCKED') {
+    showDeviceLockScreen(event, host, lockResult);
+    return;
+  }
+
+  // Hide device lock card if previously visible
+  document.getElementById('deviceLockCard')?.classList.add('is-hidden');
+
   hostState.event = event;
   hostState.host = host;
 
@@ -197,6 +260,15 @@ async function launchBeacon(event, host) {
   document.getElementById('hostEventName').textContent = event.name;
   document.getElementById('hostStationBadge').textContent = host.station_name || 'Station #1';
 
+  const pill = document.getElementById('hostDeviceLockPill');
+  if (pill) {
+    pill.textContent = '🔒 Bound to this Phone';
+  }
+
+  if (lockResult.isNewLock) {
+    showToast('This phone is now securely bound to this attendance station.', 'success');
+  }
+
   // Setup Switch button
   document.getElementById('btnSwitchHost').onclick = async () => {
     clearInterval(hostState.timerInterval);
@@ -206,6 +278,7 @@ async function launchBeacon(event, host) {
     document.getElementById('qrStageCard').classList.add('is-hidden');
     document.getElementById('hostSelfCard').classList.add('is-hidden');
     document.getElementById('hostSwitchWrap').classList.add('is-hidden');
+    document.getElementById('deviceLockCard')?.classList.add('is-hidden');
   };
 
   // Check Host Self Attendance Status

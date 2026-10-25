@@ -1193,7 +1193,7 @@ export const dbService = {
     return records;
   },
 
-  // 4B. EVENT AUTHORIZED HOSTS (MOBILE BEACONS)
+  // 4B. EVENT AUTHORIZED HOSTS (MOBILE BEACONS WITH DEVICE-LOCK)
   async getEventAuthorizedHosts(eventId) {
     const supabase = getSupabaseClient();
     if (supabase) {
@@ -1211,13 +1211,19 @@ export const dbService = {
             full_name: row.members?.full_name || row.full_name,
             station_name: row.station_name || 'Main Entrance',
             host_secret: row.host_secret || DEFAULT_HOST_SECRET_SALT,
-            is_active: row.is_active ?? true
+            is_active: row.is_active ?? true,
+            device_id: row.device_id || null,
+            device_registered_at: row.device_registered_at || null
           }));
         }
       } catch (err) {}
     }
-    const hosts = mockDb.get('event_hosts');
-    return hosts.filter((h) => h.event_id === eventId);
+    const hosts = mockDb.get('event_hosts') || [];
+    return hosts.filter((h) => h.event_id === eventId).map((h) => ({
+      ...h,
+      device_id: h.device_id || null,
+      device_registered_at: h.device_registered_at || null
+    }));
   },
 
   async getAuthorizedHostByCode(eventId, hostCode) {
@@ -1227,10 +1233,108 @@ export const dbService = {
     return hosts.find((h) => h.member_code && String(h.member_code).trim().toUpperCase() === codeStr && h.is_active) || null;
   },
 
+  async claimHostDeviceLock(eventId, hostCode, clientDeviceId) {
+    if (!eventId || !hostCode || !clientDeviceId) {
+      return { success: false, error: 'INVALID_PARAMS', message: 'Missing event ID, host code, or device ID.' };
+    }
+
+    const host = await this.getAuthorizedHostByCode(eventId, hostCode);
+    if (!host) {
+      return { success: false, error: 'NOT_FOUND', message: 'Authorized host not found for this event.' };
+    }
+
+    // 1. If host has no device locked yet -> Bind this device!
+    if (!host.device_id) {
+      const registeredAt = new Date().toISOString();
+      await this.updateHostDevice(eventId, host.member_id, clientDeviceId, registeredAt);
+      host.device_id = clientDeviceId;
+      host.device_registered_at = registeredAt;
+
+      this.logAudit('SUCCESS', 'HOST_DEVICE_BOUND', {
+        eventId,
+        memberId: host.member_id,
+        memberCode: host.member_code,
+        deviceId: clientDeviceId.slice(0, 16) + '...'
+      });
+
+      return { success: true, isNewLock: true, host };
+    }
+
+    // 2. If already bound to THIS device -> Allow access
+    if (host.device_id === clientDeviceId) {
+      return { success: true, isNewLock: false, host };
+    }
+
+    // 3. Mismatch: Locked to another phone
+    this.logAudit('REJECTED', 'HOST_DEVICE_MISMATCH', {
+      eventId,
+      memberId: host.member_id,
+      memberCode: host.member_code,
+      attemptedDevice: clientDeviceId.slice(0, 16) + '...',
+      lockedDevice: host.device_id.slice(0, 16) + '...'
+    });
+
+    return {
+      success: false,
+      error: 'DEVICE_LOCKED',
+      message: 'This attendance beacon is locked to another mobile device. If you switched phones or need to transfer this station, please contact your Administrator to unlock it.',
+      host
+    };
+  },
+
+  async resetHostDeviceLock(eventId, memberId) {
+    if (!eventId || !memberId) return false;
+    await this.updateHostDevice(eventId, memberId, null, null);
+
+    this.logAudit('SUCCESS', 'HOST_DEVICE_RESET', {
+      eventId,
+      memberId
+    });
+
+    return true;
+  },
+
+  async updateHostDevice(eventId, memberId, deviceId, registeredAt = null) {
+    // 1. Update Mock DB
+    const hosts = mockDb.get('event_hosts') || [];
+    const updated = hosts.map((h) => {
+      if (h.event_id === eventId && h.member_id === memberId) {
+        return {
+          ...h,
+          device_id: deviceId,
+          device_registered_at: registeredAt || (deviceId ? new Date().toISOString() : null)
+        };
+      }
+      return h;
+    });
+    mockDb.save('event_hosts', updated);
+
+    // 2. Update Supabase if connected
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        await supabase
+          .from('event_authorized_hosts')
+          .update({
+            device_id: deviceId,
+            device_registered_at: registeredAt || (deviceId ? new Date().toISOString() : null)
+          })
+          .eq('event_id', eventId)
+          .eq('member_id', memberId);
+      } catch (err) {
+        console.warn('Supabase updateHostDevice error:', err);
+      }
+    }
+    return true;
+  },
+
   async authorizeEventHosts(eventId, hostSelections) {
     const supabase = getSupabaseClient();
     const existing = mockDb.get('event_hosts') || [];
     const otherEvents = existing.filter((h) => h.event_id !== eventId);
+    const currentEventHosts = existing.filter((h) => h.event_id === eventId);
+    const existingHostMap = new Map(currentEventHosts.map((h) => [h.member_id, h]));
+
     const members = await this.getMembers();
     const memberMap = new Map(members.map((m) => [m.id, m]));
 
@@ -1239,17 +1343,20 @@ export const dbService = {
       const code = sel.memberCode || member?.member_code || `STF-${idx + 1}`;
       const name = sel.fullName || member?.full_name || 'Staff Member';
       const cleanCode = String(code).toLowerCase().replace(/[^a-z0-9]/g, '');
+      const prevHost = existingHostMap.get(sel.memberId);
 
       return {
-        id: sel.id || crypto.randomUUID(),
+        id: sel.id || prevHost?.id || crypto.randomUUID(),
         event_id: eventId,
         member_id: sel.memberId,
         member_code: code,
         full_name: name,
-        station_name: sel.stationName || `Beacon Station #${idx + 1}`,
-        host_secret: sel.hostSecret || `sec_${cleanCode || 'host'}_${Date.now().toString(36)}`,
+        station_name: sel.stationName || prevHost?.station_name || `Beacon Station #${idx + 1}`,
+        host_secret: sel.hostSecret || prevHost?.host_secret || `sec_${cleanCode || 'host'}_${Date.now().toString(36)}`,
         is_active: sel.isActive !== undefined ? sel.isActive : true,
-        created_at: new Date().toISOString()
+        device_id: prevHost?.device_id || null,
+        device_registered_at: prevHost?.device_registered_at || null,
+        created_at: prevHost?.created_at || new Date().toISOString()
       };
     });
 
@@ -1265,7 +1372,9 @@ export const dbService = {
             event_id: h.event_id,
             member_id: h.member_id,
             station_name: h.station_name,
-            is_active: h.is_active
+            is_active: h.is_active,
+            device_id: h.device_id,
+            device_registered_at: h.device_registered_at
           }));
           const { error: insError } = await supabase.from('event_authorized_hosts').insert(insertPayload);
           if (insError) {
@@ -1286,7 +1395,7 @@ export const dbService = {
 
   async removeEventHost(eventId, memberId) {
     const supabase = getSupabaseClient();
-    let hosts = mockDb.get('event_hosts');
+    let hosts = mockDb.get('event_hosts') || [];
     hosts = hosts.filter((h) => !(h.event_id === eventId && h.member_id === memberId));
     mockDb.save('event_hosts', hosts);
 

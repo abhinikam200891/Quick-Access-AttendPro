@@ -11,6 +11,7 @@ import { initVisualAnalytics, updateVisualAnalytics, populateAnalyticsEventFilte
 import { soundController } from './audio-chime.js';
 import { initAdminGeofencePicker } from './geo-map.js';
 import { openInAppScanner } from './camera-scanner.js';
+import { initAdminAuth } from './admin-auth.js';
 
 // Application State
 const state = {
@@ -77,17 +78,29 @@ function formatDate(isoDate) {
 }
 
 // -----------------------------------------------------------------------------
-// INITIALIZATION
+// INITIALIZATION WITH SECURE ADMIN AUTH
 // -----------------------------------------------------------------------------
+let isPortalInitialized = false;
+
 export async function initAdminPortal() {
-  setupTabs();
-  setupEventListeners();
-  updateEnvBadge();
-  await refreshAllData();
-  renderKpis();
-  initVisualAnalytics(state);
-  setupRealtimeFeed();
-  setupLiveStreamControls();
+  await initAdminAuth({
+    onLoginSuccess: async (user) => {
+      if (!isPortalInitialized) {
+        setupTabs();
+        setupEventListeners();
+        isPortalInitialized = true;
+      }
+      updateEnvBadge();
+      await refreshAllData();
+      renderKpis();
+      initVisualAnalytics(state);
+      setupRealtimeFeed();
+      setupLiveStreamControls();
+    },
+    onLogout: () => {
+      // Cleared session
+    }
+  });
 }
 
 function updateEnvBadge() {
@@ -352,13 +365,15 @@ async function openHostsModal(eventId) {
   // Filter all staff members from state
   const staffMembers = state.members.filter((m) => m.role === 'Staff');
 
-  // Maintain working state: memberId -> { isChecked, station }
+  // Maintain working state: memberId -> { isChecked, station, deviceId, deviceRegisteredAt }
   const workingState = new Map();
   staffMembers.forEach((m) => {
     const existing = authMap.get(m.id);
     workingState.set(m.id, {
       isChecked: existing ? existing.is_active !== false : false,
-      station: existing?.station_name || 'Main Gate'
+      station: existing?.station_name || 'Main Gate',
+      deviceId: existing?.device_id || null,
+      deviceRegisteredAt: existing?.device_registered_at || null
     });
   });
 
@@ -478,6 +493,13 @@ async function openHostsModal(eventId) {
               <button type="button" class="btn btn-ghost btn-sm btn-copy-host-link" data-link="${hostLink}" title="Copy Mobile Link to send to Staff via WhatsApp/SMS">
                 📋 Copy
               </button>
+              ${isChecked ? (stateObj.deviceId ? `
+                <button type="button" class="btn btn-ghost btn-sm btn-reset-device-lock" data-member-id="${m.id}" data-member-name="${escapeHtml(m.full_name)}" title="Phone is currently locked to this beacon. Click to reset so staff can bind another phone.">
+                  🔓 Reset Device
+                </button>
+              ` : `
+                <span class="badge badge-secondary" title="No phone bound yet" style="font-size:0.7rem; padding: 2px 6px;">⏳ Unbound</span>
+              `) : ''}
               ${isChecked ? `
                 <button type="button" class="btn btn-ghost btn-sm btn-quick-unassign" data-member-id="${m.id}" title="Remove this staff member from taking attendance" style="color:var(--accent-rose);">
                   ❌ Remove
@@ -509,6 +531,26 @@ async function openHostsModal(eventId) {
         updateAuthCount();
         renderRows(searchInput.value);
         showToast('Staff unassigned from event hosts', 'info');
+      };
+    });
+
+    // Attach Reset Device Lock button listeners
+    tbody.querySelectorAll('.btn-reset-device-lock').forEach((btn) => {
+      btn.onclick = async () => {
+        const memberId = btn.dataset.memberId;
+        const memberName = btn.dataset.memberName;
+        if (!confirm(`Reset device lock for ${memberName}?\n\nThey will be able to bind a new mobile phone when opening the beacon link.`)) return;
+        btn.disabled = true;
+        btn.textContent = 'Resetting...';
+        await dbService.resetHostDeviceLock(event.id, memberId);
+        const stateObj = workingState.get(memberId);
+        if (stateObj) {
+          stateObj.deviceId = null;
+          stateObj.deviceRegisteredAt = null;
+          workingState.set(memberId, stateObj);
+        }
+        renderRows(searchInput.value);
+        showToast(`Device lock reset for ${memberName}.`, 'success');
       };
     });
   }
@@ -598,6 +640,8 @@ async function openHostsModal(eventId) {
               memberCode: m?.member_code || '',
               fullName: m?.full_name || '',
               stationName: val.station || 'Main Gate',
+              deviceId: val.deviceId || null,
+              deviceRegisteredAt: val.deviceRegisteredAt || null,
               isActive: true
             });
           }

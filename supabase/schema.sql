@@ -93,17 +93,23 @@ CREATE TABLE IF NOT EXISTS attendance (
     CONSTRAINT uq_event_member_attendance UNIQUE(event_id, member_id)
 );
 
--- 8. AUTHORIZED EVENT HOSTS (20+ Mobile Rotating QR Beacons)
+-- 8. AUTHORIZED EVENT HOSTS (20+ Mobile Rotating QR Beacons with Device-Lock)
 CREATE TABLE IF NOT EXISTS event_authorized_hosts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
     member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
     station_name VARCHAR(100) DEFAULT 'Main Gate',
     is_active BOOLEAN NOT NULL DEFAULT true,
+    device_id VARCHAR(100) DEFAULT NULL,
+    device_registered_at TIMESTAMPTZ DEFAULT NULL,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now(),
     CONSTRAINT uq_event_member_host UNIQUE(event_id, member_id)
 );
+
+-- Idempotent column additions for existing deployments:
+ALTER TABLE event_authorized_hosts ADD COLUMN IF NOT EXISTS device_id VARCHAR(100) DEFAULT NULL;
+ALTER TABLE event_authorized_hosts ADD COLUMN IF NOT EXISTS device_registered_at TIMESTAMPTZ DEFAULT NULL;
 
 -- 9. AUDIT LOGS TABLE
 CREATE TABLE IF NOT EXISTS audit_logs (

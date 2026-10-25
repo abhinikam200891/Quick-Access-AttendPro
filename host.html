@@ -55,6 +55,41 @@
       </button>
     </section>
 
+    <!-- 1B. Device Lock Alert Card (Shown if link is locked to another phone) -->
+    <section class="device-lock-card is-hidden" id="deviceLockCard">
+      <div class="device-lock-icon">🔒</div>
+      <h2 class="device-lock-title">Device Lock Active</h2>
+      <div class="device-lock-badge">⛔ Unauthorized Mobile Device</div>
+      <p class="device-lock-desc">
+        This attendance beacon has already been activated and bound to another mobile phone.
+        <strong>Forwarding or sharing this attendance-taking link is strictly prohibited.</strong>
+      </p>
+
+      <div class="device-lock-info-box">
+        <div class="device-lock-row">
+          <span class="device-lock-label">Authorized Staff:</span>
+          <span class="device-lock-val" id="lockedHostName">-</span>
+        </div>
+        <div class="device-lock-row">
+          <span class="device-lock-label">Staff Code:</span>
+          <span class="device-lock-val" id="lockedHostCode">-</span>
+        </div>
+        <div class="device-lock-row">
+          <span class="device-lock-label">Station:</span>
+          <span class="device-lock-val" id="lockedStationName">-</span>
+        </div>
+      </div>
+
+      <div class="device-lock-help-box">
+        💡 <strong>Switched to a new phone?</strong><br />
+        Ask your Event Administrator to click <strong>"🔓 Reset Device Lock"</strong> for your name in the Admin portal, then tap the button below.
+      </div>
+
+      <button type="button" class="btn btn-primary btn-block" id="btnRetryDeviceLock" style="margin-top: 16px;">
+        🔄 Check Again &amp; Unlock Beacon
+      </button>
+    </section>
+
     <!-- 2. Active Host Profile Banner -->
     <section class="host-profile-card is-hidden" id="hostProfileCard">
       <div class="host-avatar" id="hostAvatarIcon">👤</div>
@@ -62,7 +97,8 @@
         <div class="host-name" id="hostDisplayName">Staff Host Name</div>
         <div class="host-meta">
           <span id="hostCodeBadge">STF-1001</span> &bull;
-          <span id="hostEventName">Event Name</span>
+          <span id="hostEventName">Event Name</span> &bull;
+          <span class="host-device-pill" id="hostDeviceLockPill">🔒 Device Bound</span>
         </div>
       </div>
       <div class="host-station-badge" id="hostStationBadge">Station #1</div>

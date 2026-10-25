@@ -16,6 +16,170 @@
   <link rel="stylesheet" href="/css/admin.css" />
 </head>
 <body class="admin-layout">
+  <!-- ========================================== -->
+  <!-- ADMIN AUTHENTICATION SCREEN (LOGIN & OTP)  -->
+  <!-- ========================================== -->
+  <div id="adminAuthContainer" class="admin-auth-screen is-hidden">
+    <div class="admin-auth-card">
+      <div class="auth-card-header">
+        <div class="auth-brand-logo">
+          <img src="/assets/logo.png" alt="AttendPro Logo" class="auth-logo-img" />
+        </div>
+        <h1 class="auth-title">Quick Access AttendPro</h1>
+        <p class="auth-subtitle">Enterprise Administration Access</p>
+      </div>
+
+      <!-- Mode 1: Admin Login -->
+      <form id="adminLoginForm" class="auth-form">
+        <div class="auth-alert is-hidden"></div>
+
+        <div class="form-group">
+          <label class="form-label" for="adminLoginEmail">Admin Email ID <span class="required">*</span></label>
+          <div class="input-with-icon">
+            <span class="input-icon">✉️</span>
+            <input type="email" id="adminLoginEmail" class="form-control" placeholder="admin@attendpro.com" required autocomplete="username" />
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label class="form-label" for="adminLoginPassword" style="margin-bottom: 0;">Password <span class="required">*</span></label>
+            <button type="button" class="auth-link-btn" id="btnGoToForgotPassword">Forgot Password?</button>
+          </div>
+          <div class="input-with-icon password-wrap">
+            <span class="input-icon">🔑</span>
+            <input type="password" id="adminLoginPassword" class="form-control" placeholder="••••••••••••" required autocomplete="current-password" />
+            <button type="button" class="btn-toggle-pwd" title="Show/Hide Password">👁️</button>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block btn-auth-submit" id="btnAdminSignIn">
+          <span class="spinner spinner-hidden" id="loginSpinner"></span>
+          <span>⚡ Sign In to Admin Portal</span>
+        </button>
+
+        <div class="auth-extra-links">
+          <span>First time admin?</span>
+          <button type="button" class="auth-link-btn" id="btnGoToRegister">Register Admin User</button>
+        </div>
+
+        <div class="auth-footer-note">
+          <span>🛡️ Protected with End-to-End Supabase Authentication &bull; AES Encrypted</span>
+        </div>
+      </form>
+
+      <!-- Mode 2: Forgot Password Request OTP -->
+      <form id="adminForgotForm" class="auth-form is-hidden">
+        <div class="auth-alert is-hidden"></div>
+        <div class="auth-step-desc">
+          Enter your registered Administrator email address. We will send a secure 6-digit verification code to reset your password.
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="adminForgotEmail">Registered Admin Email <span class="required">*</span></label>
+          <div class="input-with-icon">
+            <span class="input-icon">✉️</span>
+            <input type="email" id="adminForgotEmail" class="form-control" placeholder="admin@attendpro.com" required />
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block btn-auth-submit" id="btnSendResetOtp">
+          <span class="spinner spinner-hidden" id="forgotSpinner"></span>
+          <span>📩 Send Verification Code (OTP)</span>
+        </button>
+
+        <div style="text-align: center; margin-top: 16px;">
+          <button type="button" class="auth-link-btn" id="btnBackToLoginFromForgot">← Back to Sign In</button>
+        </div>
+      </form>
+
+      <!-- Mode 3: Enter OTP & Set New Password -->
+      <form id="adminResetForm" class="auth-form is-hidden">
+        <div class="auth-alert is-hidden"></div>
+        <div class="auth-step-desc">
+          Enter the 6-digit OTP code sent to <strong id="resetTargetEmailLabel">your email</strong>, then choose a new password.
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="adminResetOtp">6-Digit Verification Code (OTP) <span class="required">*</span></label>
+          <div class="input-with-icon">
+            <span class="input-icon">🔢</span>
+            <input type="text" id="adminResetOtp" class="form-control auth-otp-input" placeholder="123456" maxlength="8" required />
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 14px;">
+          <label class="form-label" for="adminNewPassword">New Password <span class="required">*</span></label>
+          <div class="input-with-icon password-wrap">
+            <span class="input-icon">🔒</span>
+            <input type="password" id="adminNewPassword" class="form-control" placeholder="Min 6 characters" required minlength="6" />
+            <button type="button" class="btn-toggle-pwd" title="Show/Hide Password">👁️</button>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 14px;">
+          <label class="form-label" for="adminConfirmPassword">Confirm New Password <span class="required">*</span></label>
+          <div class="input-with-icon password-wrap">
+            <span class="input-icon">🔒</span>
+            <input type="password" id="adminConfirmPassword" class="form-control" placeholder="Re-enter new password" required minlength="6" />
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block btn-auth-submit" id="btnSubmitNewPassword">
+          <span class="spinner spinner-hidden" id="resetSpinner"></span>
+          <span>🔐 Reset Password &amp; Sign In</span>
+        </button>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
+          <button type="button" class="auth-link-btn" id="btnResendOtp">Resend OTP</button>
+          <button type="button" class="auth-link-btn" id="btnBackToLoginFromReset">Cancel</button>
+        </div>
+      </form>
+
+      <!-- Mode 4: Register Admin User -->
+      <form id="adminRegisterForm" class="auth-form is-hidden">
+        <div class="auth-alert is-hidden"></div>
+        <div class="auth-step-desc">
+          Create an Administrator account in your connected Supabase authentication database.
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="adminRegisterEmail">Admin Email ID <span class="required">*</span></label>
+          <div class="input-with-icon">
+            <span class="input-icon">✉️</span>
+            <input type="email" id="adminRegisterEmail" class="form-control" placeholder="admin@attendpro.com" required />
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 14px;">
+          <label class="form-label" for="adminRegisterPassword">Password <span class="required">*</span></label>
+          <div class="input-with-icon password-wrap">
+            <span class="input-icon">🔒</span>
+            <input type="password" id="adminRegisterPassword" class="form-control" placeholder="Min 6 characters" required minlength="6" />
+            <button type="button" class="btn-toggle-pwd" title="Show/Hide Password">👁️</button>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 14px;">
+          <label class="form-label" for="adminRegisterConfirmPassword">Confirm Password <span class="required">*</span></label>
+          <div class="input-with-icon password-wrap">
+            <span class="input-icon">🔒</span>
+            <input type="password" id="adminRegisterConfirmPassword" class="form-control" placeholder="Confirm password" required minlength="6" />
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block btn-auth-submit" id="btnSubmitRegister">
+          <span class="spinner spinner-hidden" id="registerSpinner"></span>
+          <span>✨ Create Admin Account</span>
+        </button>
+
+        <div style="text-align: center; margin-top: 16px;">
+          <button type="button" class="auth-link-btn" id="btnBackToLoginFromRegister">← Back to Sign In</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Top Navigation Bar -->
   <header class="admin-navbar">
     <div class="brand-wrapper">
@@ -32,6 +196,10 @@
         <span id="envLabel">Connecting...</span>
       </div>
 
+      <div class="admin-user-pill" id="adminUserPill" title="Authenticated Administrator">
+        👤 <span id="adminUserIndicator">Admin</span>
+      </div>
+
       <button class="btn btn-secondary btn-sm btn-install-app" id="btnAdminInstallApp" title="Install Quick Access AttendPro on your Computer">
         💻 <span class="btn-text">Install App</span>
       </button>
@@ -43,6 +211,11 @@
       <button class="btn btn-secondary btn-sm" id="btnOpenSettings" title="Configure Supabase & System">
         ⚙️ <span class="btn-text">Settings</span>
       </button>
+
+      <button class="btn btn-ghost btn-sm btn-sign-out" id="btnAdminSignOut" title="Sign out of Admin Portal">
+        🚪 <span class="btn-text">Sign Out</span>
+      </button>
+
       <a href="/checkin.html" target="_blank" class="btn btn-primary btn-sm" title="Open Attendee Check-In Portal">
         📱 <span class="btn-text">Mobile Portal</span>
       </a>
