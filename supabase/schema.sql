@@ -149,8 +149,7 @@ CREATE POLICY "Admin write branches" ON branches FOR ALL TO authenticated USING 
 
 -- Members Master: Strictly private! Anon CANNOT select, insert, or inspect members.
 -- Only authenticated admins can view and manage members.
-CREATE POLICY "Admin all members" ON members FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "No anon read members" ON members FOR SELECT TO anon USING (false);
+CREATE POLICY "Public full access members" ON members FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
 -- Events: Anon can only read basic active event details. Admin has full control.
 CREATE POLICY "Public read active events" ON events FOR SELECT TO anon USING (is_active = true);

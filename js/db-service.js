@@ -1425,20 +1425,86 @@ export const dbService = {
     const supabase = getSupabaseClient();
     if (supabase) {
       if (isEdit) {
-        await supabase.from('members').update(entry).eq('id', id);
+        const updatePayload = {
+          role: entry.role,
+          member_code: entry.member_code,
+          full_name: entry.full_name,
+          phone_number: entry.phone_number,
+          division_id: entry.division_id,
+          branch_id: entry.branch_id,
+          is_active: entry.is_active,
+          updated_at: entry.updated_at
+        };
+        const { error } = await supabase.from('members').update(updatePayload).eq('id', id);
+        if (error) {
+          console.error('[Supabase] Member update failed:', error);
+          throw new Error('Database update failed: ' + error.message);
+        }
       } else {
-        await supabase.from('members').insert([{ ...entry, created_at: new Date().toISOString() }]);
+        const { error } = await supabase.from('members').insert([{ ...entry, created_at: new Date().toISOString() }]);
+        if (error) {
+          console.error('[Supabase] Member insert failed:', error);
+          throw new Error('Database insert failed: ' + error.message);
+        }
       }
     }
 
     const members = mockDb.get('members');
+    let oldMember = null;
     if (isEdit) {
       const idx = members.findIndex((m) => m.id === id);
-      if (idx !== -1) members[idx] = { ...members[idx], ...entry };
+      if (idx !== -1) {
+        oldMember = { ...members[idx] };
+        members[idx] = { ...members[idx], ...entry };
+      }
     } else {
       members.unshift({ ...entry, created_at: new Date().toISOString() });
     }
     mockDb.save('members', members);
+
+    // If an existing member was transferred to a different branch or division, write an audit log
+    if (isEdit && oldMember && (oldMember.branch_id !== entry.branch_id || oldMember.division_id !== entry.division_id)) {
+      try {
+        const [divs, brs] = await Promise.all([this.getDivisions(), this.getBranches()]);
+        const divMap = new Map(divs.map((d) => [d.id, d.name]));
+        const brMap = new Map(brs.map((b) => [b.id, b.name]));
+        const fromLoc = `${divMap.get(oldMember.division_id) || 'Unknown'} - ${brMap.get(oldMember.branch_id) || 'Unknown'}`;
+        const toLoc = `${divMap.get(entry.division_id) || 'Unknown'} - ${brMap.get(entry.branch_id) || 'Unknown'}`;
+
+        const auditLogs = mockDb.get('audit_logs');
+        auditLogs.unshift({
+          id: crypto.randomUUID(),
+          action: 'BRANCH_TRANSFER',
+          status: 'SUCCESS',
+          details: {
+            member_code: entry.member_code,
+            full_name: entry.full_name,
+            from: fromLoc,
+            to: toLoc
+          },
+          user_agent: navigator.userAgent,
+          created_at: new Date().toISOString()
+        });
+        mockDb.save('audit_logs', auditLogs);
+
+        if (supabase) {
+          await supabase.from('audit_logs').insert([{
+            action: 'BRANCH_TRANSFER',
+            status: 'SUCCESS',
+            details: {
+              member_code: entry.member_code,
+              full_name: entry.full_name,
+              from: fromLoc,
+              to: toLoc
+            },
+            user_agent: navigator.userAgent
+          }]);
+        }
+      } catch (auditErr) {
+        console.warn('Branch transfer audit log write error:', auditErr);
+      }
+    }
+
     return entry;
   },
 

@@ -802,10 +802,13 @@ async function renderMembersTable() {
         <td>${statusBadge}</td>
         <td>
           <div class="table-actions">
+            <button class="btn btn-secondary btn-sm btn-transfer-member" data-id="${member.id}" title="Transfer staff to another branch or edit details">
+              🏢 Transfer / Edit
+            </button>
             <button class="btn btn-ghost btn-sm btn-toggle-member" data-id="${member.id}">
               ${member.is_active ? '⏸️ Deactivate' : '▶️ Activate'}
             </button>
-            <button class="btn btn-ghost btn-sm btn-delete-member" data-id="${member.id}" style="color:var(--accent-rose);">
+            <button class="btn btn-ghost btn-sm btn-delete-member" data-id="${member.id}" style="color:var(--accent-rose);" title="Delete user record">
               🗑️
             </button>
           </div>
@@ -814,6 +817,15 @@ async function renderMembersTable() {
     `;
     })
     .join('');
+
+  tbody.querySelectorAll('.btn-transfer-member').forEach((btn) => {
+    btn.onclick = () => {
+      const member = state.members.find((m) => m.id === btn.dataset.id);
+      if (member) {
+        openEditMemberModal(member);
+      }
+    };
+  });
 
   tbody.querySelectorAll('.btn-toggle-member').forEach((btn) => {
     btn.onclick = async () => {
@@ -832,6 +844,70 @@ async function renderMembersTable() {
       }
     };
   });
+}
+
+async function openEditMemberModal(member) {
+  const memberModal = document.getElementById('memberModal');
+  const memberForm = document.getElementById('memberForm');
+  const memberIdInput = document.getElementById('memberId');
+  const memberRoleSelect = document.getElementById('memberRole');
+  const memberCodeInput = document.getElementById('memberCode');
+  const memberNameInput = document.getElementById('memberName');
+  const memberPhoneInput = document.getElementById('memberPhone');
+  const memberDivSelect = document.getElementById('memberDivision');
+  const memberBranchSelect = document.getElementById('memberBranch');
+  const memberIsActiveCheck = document.getElementById('memberIsActive');
+  const titleEl = document.getElementById('memberModalTitle');
+  const subtitleEl = document.getElementById('memberModalSubtitle');
+  const bannerEl = document.getElementById('memberTransferBanner');
+  const saveBtn = document.getElementById('btnSaveMember');
+
+  if (!memberModal) return;
+
+  if (memberForm) memberForm.reset();
+  if (memberIdInput) memberIdInput.value = member.id;
+  if (memberRoleSelect) memberRoleSelect.value = member.role;
+  if (memberCodeInput) memberCodeInput.value = member.member_code;
+  if (memberNameInput) memberNameInput.value = member.full_name;
+  if (memberPhoneInput) memberPhoneInput.value = member.phone_number;
+  if (memberIsActiveCheck) memberIsActiveCheck.checked = Boolean(member.is_active);
+
+  if (titleEl) titleEl.textContent = '🏢 Transfer Branch / Edit User';
+  if (subtitleEl) {
+    subtitleEl.textContent = `Reassign branch or update profile for ${member.full_name} (${member.member_code})`;
+    subtitleEl.style.display = 'block';
+  }
+  if (bannerEl) {
+    const staffNameEl = document.getElementById('transferStaffName');
+    const staffCodeEl = document.getElementById('transferStaffCode');
+    const currBranchEl = document.getElementById('currentBranchDisplay');
+    if (staffNameEl) staffNameEl.textContent = member.full_name;
+    if (staffCodeEl) staffCodeEl.textContent = member.member_code;
+    if (currBranchEl) currBranchEl.textContent = `${member.division_name || 'N/A'} • ${member.branch_name || 'N/A'}`;
+    bannerEl.style.display = 'block';
+  }
+  if (saveBtn) saveBtn.textContent = '💾 Save Changes & Transfer Branch';
+
+  // Populate divisions
+  if (memberDivSelect) {
+    memberDivSelect.innerHTML = '<option value="">Select Division</option>' +
+      state.divisions.map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`).join('');
+    memberDivSelect.value = member.division_id || '';
+  }
+
+  // Populate branches for this member's division
+  if (memberBranchSelect) {
+    if (member.division_id) {
+      const branches = await dbService.getBranches(member.division_id);
+      memberBranchSelect.innerHTML = '<option value="">Select Branch</option>' +
+        branches.map((b) => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('');
+      memberBranchSelect.value = member.branch_id || '';
+    } else {
+      memberBranchSelect.innerHTML = '<option value="">Select Division First</option>';
+    }
+  }
+
+  memberModal.classList.add('active');
 }
 
 // -----------------------------------------------------------------------------
@@ -1186,6 +1262,19 @@ function setupEventListeners() {
   if (btnOpenAddMember && memberModal) {
     btnOpenAddMember.onclick = async () => {
       memberForm.reset();
+      const memberIdInput = document.getElementById('memberId');
+      if (memberIdInput) memberIdInput.value = '';
+
+      const titleEl = document.getElementById('memberModalTitle');
+      const subtitleEl = document.getElementById('memberModalSubtitle');
+      const bannerEl = document.getElementById('memberTransferBanner');
+      const saveBtn = document.getElementById('btnSaveMember');
+
+      if (titleEl) titleEl.textContent = 'Add Master User Record';
+      if (subtitleEl) subtitleEl.style.display = 'none';
+      if (bannerEl) bannerEl.style.display = 'none';
+      if (saveBtn) saveBtn.textContent = 'Save User';
+
       // Populate divisions
       memberDivSelect.innerHTML = '<option value="">Select Division</option>' +
         state.divisions.map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`).join('');
@@ -1211,7 +1300,9 @@ function setupEventListeners() {
     memberForm.onsubmit = async (e) => {
       e.preventDefault();
       try {
+        const memberId = document.getElementById('memberId')?.value || '';
         const payload = {
+          id: memberId || undefined,
           role: document.getElementById('memberRole').value,
           member_code: document.getElementById('memberCode').value,
           full_name: document.getElementById('memberName').value,
@@ -1222,7 +1313,14 @@ function setupEventListeners() {
         };
         await dbService.saveMember(payload);
         memberModal.classList.remove('active');
-        showToast('User record saved successfully', 'success');
+
+        if (memberId) {
+          const br = state.branches.find((b) => b.id === payload.branch_id);
+          const brName = br ? br.name : 'new branch';
+          showToast(`✅ ${payload.full_name} updated successfully! Allocated to ${brName}.`, 'success');
+        } else {
+          showToast('User record saved successfully', 'success');
+        }
         await refreshAllData();
       } catch (err) {
         showToast(err.message, 'error');

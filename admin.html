@@ -679,15 +679,25 @@
     </div>
   </div>
 
-  <!-- 3. ADD USER MODAL -->
+  <!-- 3. ADD / EDIT USER & BRANCH TRANSFER MODAL -->
   <div class="modal-backdrop" id="memberModal">
     <div class="modal-card">
       <div class="modal-header">
-        <h3 class="modal-title">Add Master User Record</h3>
+        <div>
+          <h3 class="modal-title" id="memberModalTitle">Add Master User Record</h3>
+          <div class="modal-subtitle" id="memberModalSubtitle" style="font-size:0.85rem;color:var(--text-secondary);display:none;margin-top:2px;"></div>
+        </div>
         <button class="modal-close">&times;</button>
       </div>
       <form id="memberForm">
+        <input type="hidden" id="memberId" value="" />
         <div class="modal-body">
+          <!-- Branch Transfer Highlight Banner -->
+          <div id="memberTransferBanner" style="display:none; margin-bottom: var(--space-md); padding: 12px 14px; background: rgba(99, 102, 241, 0.08); border-left: 4px solid var(--accent-indigo, #6366f1); border-radius: var(--radius-sm); font-size: 0.88rem;">
+            🏢 <strong>Branch Transfer Mode:</strong> Reassigning branch for <span id="transferStaffName" style="font-weight:700;"></span> (<span id="transferStaffCode" style="font-family:monospace;"></span>).<br />
+            <span style="color:var(--text-secondary); font-size: 0.82rem;">Current Allocation: <strong id="currentBranchDisplay"></strong></span>
+          </div>
+
           <div class="form-row-2col">
             <div class="form-group">
               <label class="form-label" for="memberRole">Role <span class="required">*</span></label>
@@ -719,6 +729,7 @@
             <select id="memberDivision" class="form-control form-select" title="Select member division" aria-label="Select member division" required>
               <option value="">Select Division</option>
             </select>
+            <div class="form-hint">Select the division the staff member belongs to.</div>
           </div>
 
           <div class="form-group">
@@ -726,6 +737,7 @@
             <select id="memberBranch" class="form-control form-select" title="Select member branch" aria-label="Select member branch" required>
               <option value="">Select Division First</option>
             </select>
+            <div class="form-hint">Select the new branch if this staff member has been transferred.</div>
           </div>
 
           <div class="form-group">
@@ -738,7 +750,7 @@
 
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary btn-modal-dismiss">Cancel</button>
-          <button type="submit" class="btn btn-primary">Save User</button>
+          <button type="submit" class="btn btn-primary" id="btnSaveMember">Save User</button>
         </div>
       </form>
     </div>
