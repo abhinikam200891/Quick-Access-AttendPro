@@ -1268,72 +1268,89 @@ export const dbService = {
     const supabase = getSupabaseClient();
     if (supabase) {
       try {
-        let query = supabase.from('members').select(`
-          id, role, member_code, full_name, phone_number, is_active, created_at,
-          divisions (id, name),
-          branches (id, name)
-        `).order('full_name');
+        const buildBaseQuery = (isNested = true) => {
+          let q = supabase.from('members').select(isNested ? `
+            id, role, member_code, full_name, phone_number, division_id, branch_id, is_active, created_at,
+            divisions (id, name),
+            branches (id, name)
+          ` : `
+            id, role, member_code, full_name, phone_number, division_id, branch_id, is_active, created_at
+          `).order('full_name');
 
-        if (filters.branchId && filters.branchId !== 'All') {
-          query = query.eq('branch_id', filters.branchId);
-        }
-        if (filters.divisionId && filters.divisionId !== 'All') {
-          query = query.eq('division_id', filters.divisionId);
-        }
-        if (filters.role && filters.role !== 'All') {
-          query = query.eq('role', filters.role);
-        }
-        if (filters.isActive !== undefined) {
-          query = query.eq('is_active', filters.isActive);
-        }
+          if (filters.branchId && filters.branchId !== 'All') {
+            q = q.eq('branch_id', filters.branchId);
+          }
+          if (filters.divisionId && filters.divisionId !== 'All') {
+            q = q.eq('division_id', filters.divisionId);
+          }
+          if (filters.role && filters.role !== 'All') {
+            q = q.eq('role', filters.role);
+          }
+          if (filters.isActive !== undefined) {
+            q = q.eq('is_active', filters.isActive);
+          }
+          return q;
+        };
 
-        const { data, error } = await query;
-        if (!error && Array.isArray(data)) {
-          return data.map((m) => ({
-            id: m.id,
-            role: m.role,
-            member_code: m.member_code,
-            full_name: m.full_name,
-            phone_number: m.phone_number,
-            division_id: m.divisions?.id || m.division_id,
-            division_name: m.divisions?.name || 'Unknown',
-            branch_id: m.branches?.id || m.branch_id,
-            branch_name: m.branches?.name || 'Unknown',
-            is_active: m.is_active,
-            created_at: m.created_at
-          }));
-        }
+        // Fetch all records across 1000-row PostgREST pages
+        let allRecords = [];
+        let from = 0;
+        const pageSize = 1000;
+        let useNested = true;
 
-        // If nested query failed, try flat query
-        console.warn('Nested Supabase members query failed, trying flat query:', error);
-        let flatQuery = supabase.from('members').select('*').order('full_name');
-        if (filters.branchId && filters.branchId !== 'All') flatQuery = flatQuery.eq('branch_id', filters.branchId);
-        if (filters.divisionId && filters.divisionId !== 'All') flatQuery = flatQuery.eq('division_id', filters.divisionId);
-        if (filters.role && filters.role !== 'All') flatQuery = flatQuery.eq('role', filters.role);
-        if (filters.isActive !== undefined) flatQuery = flatQuery.eq('is_active', filters.isActive);
+        while (true) {
+          const { data, error } = await buildBaseQuery(useNested).range(from, from + pageSize - 1);
+          if (error) {
+            if (useNested) {
+              console.warn('Nested query failed on page, falling back to flat query:', error);
+              useNested = false;
+              allRecords = [];
+              from = 0;
+              continue;
+            }
+            console.error('[Supabase] Member query error:', error);
+            break;
+          }
 
-        const { data: flatData, error: flatError } = await flatQuery;
-        if (!flatError && Array.isArray(flatData)) {
-          const [divs, brs] = await Promise.all([this.getDivisions(), this.getBranches()]);
-          const divMap = new Map(divs.map((d) => [d.id, d.name]));
-          const brMap = new Map(brs.map((b) => [b.id, b.name]));
-          return flatData.map((m) => ({
-            id: m.id,
-            role: m.role,
-            member_code: m.member_code,
-            full_name: m.full_name,
-            phone_number: m.phone_number,
-            division_id: m.division_id,
-            division_name: divMap.get(m.division_id) || 'Unknown',
-            branch_id: m.branch_id,
-            branch_name: brMap.get(m.branch_id) || 'Unknown',
-            is_active: m.is_active,
-            created_at: m.created_at
-          }));
+          if (!data || data.length === 0) break;
+          allRecords.push(...data);
+          if (data.length < pageSize) break;
+          from += pageSize;
         }
 
-        if (flatError) {
-          console.error('[Supabase] Flat members query error:', flatError);
+        if (allRecords.length > 0) {
+          if (useNested) {
+            return allRecords.map((m) => ({
+              id: m.id,
+              role: m.role,
+              member_code: m.member_code,
+              full_name: m.full_name,
+              phone_number: m.phone_number,
+              division_id: m.divisions?.id || m.division_id,
+              division_name: m.divisions?.name || 'Unknown',
+              branch_id: m.branches?.id || m.branch_id,
+              branch_name: m.branches?.name || 'Unknown',
+              is_active: m.is_active,
+              created_at: m.created_at
+            }));
+          } else {
+            const [divs, brs] = await Promise.all([this.getDivisions(), this.getBranches()]);
+            const divMap = new Map(divs.map((d) => [d.id, d.name]));
+            const brMap = new Map(brs.map((b) => [b.id, b.name]));
+            return allRecords.map((m) => ({
+              id: m.id,
+              role: m.role,
+              member_code: m.member_code,
+              full_name: m.full_name,
+              phone_number: m.phone_number,
+              division_id: m.division_id,
+              division_name: divMap.get(m.division_id) || 'Unknown',
+              branch_id: m.branch_id,
+              branch_name: brMap.get(m.branch_id) || 'Unknown',
+              is_active: m.is_active,
+              created_at: m.created_at
+            }));
+          }
         }
       } catch (e) {
         console.error('Supabase getMembers error:', e);
