@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Portal | Quick Access AttendPro</title>
+  <meta name="description" content="Admin Dashboard for managing attendance events, live records, QR codes, and master rosters." />
+  <link rel="icon" type="image/png" href="/assets/logo.png" />
+  <link rel="apple-touch-icon" href="/assets/icon-192.png" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="QA AttendPro" />
+  <link rel="stylesheet" href="/css/common.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
+</head>
+<body class="admin-layout">
+  <!-- Top Navigation Bar -->
+  <header class="admin-navbar">
+    <div class="brand-wrapper">
+      <img src="/assets/logo.png" alt="Quick Access AttendPro Logo" class="brand-logo-img" />
+      <div>
+        <div class="brand-title">Quick Access AttendPro</div>
+        <div class="brand-sub">Enterprise Administration Portal</div>
+      </div>
+    </div>
+
+    <div class="nav-actions">
+      <div class="env-badge" id="envBadge">
+        <span class="env-indicator-dot" id="envDot"></span>
+        <span id="envLabel">Connecting...</span>
+      </div>
+
+      <button class="btn btn-secondary btn-sm btn-install-app" id="btnAdminInstallApp" title="Install Quick Access AttendPro on your Computer">
+        💻 <span class="btn-text">Install App</span>
+      </button>
+
+      <button class="btn btn-secondary btn-sm" id="btnAdminCameraScanner" title="Open In-App Camera Barcode/QR Scanner">
+        📷 <span class="btn-text">Camera Scanner</span>
+      </button>
+
+      <button class="btn btn-secondary btn-sm" id="btnOpenSettings" title="Configure Supabase & System">
+        ⚙️ <span class="btn-text">Settings</span>
+      </button>
+      <a href="/checkin.html" target="_blank" class="btn btn-primary btn-sm" title="Open Attendee Check-In Portal">
+        📱 <span class="btn-text">Mobile Portal</span>
+      </a>
+    </div>
+  </header>
+
+  <!-- Secondary Tab Navigation -->
+  <nav class="admin-subnav">
+    <div class="nav-tabs">
+      <button class="tab-btn active" data-tab="events">
+        📅 <span class="tab-label-full">Events Management</span><span class="tab-label-short">Events</span>
+      </button>
+      <button class="tab-btn" data-tab="attendance">
+        📊 <span class="tab-label-full">Live Attendance</span><span class="tab-label-short">Attendance</span>
+      </button>
+      <button class="tab-btn" data-tab="analytics" id="tabBtnAnalytics">
+        📈 <span class="tab-label-full">Visual Analytics</span><span class="tab-label-short">Analytics</span>
+      </button>
+      <button class="tab-btn" data-tab="masters">
+        👥 <span class="tab-label-full">User Master</span><span class="tab-label-short">Users</span>
+      </button>
+      <button class="tab-btn" data-tab="audit">
+        🛡️ <span class="tab-label-full">Security Audit Logs</span><span class="tab-label-short">Audit</span>
+      </button>
+    </div>
+
+    <div>
+      <button class="btn btn-primary btn-sm" id="btnOpenCreateEvent">
+        + Create New Event
+      </button>
+    </div>
+  </nav>
+
+  <!-- Main Container -->
+  <main class="admin-container">
+    <!-- KPI Metric Cards Grid -->
+    <section class="stats-grid">
+      <div class="stat-card">
+        <div>
+          <div class="stat-label">Total Events</div>
+          <div class="stat-value" id="kpiTotalEvents">0</div>
+          <div class="stat-hint stat-hint-secondary">Scheduled sessions</div>
+        </div>
+        <div class="stat-icon stat-icon-indigo">📅</div>
+      </div>
+
+      <div class="stat-card">
+        <div>
+          <div class="stat-label">Active Events</div>
+          <div class="stat-value" id="kpiActiveEvents">0</div>
+          <div class="stat-hint">Accepting check-ins</div>
+        </div>
+        <div class="stat-icon stat-icon-emerald">⚡</div>
+      </div>
+
+      <div class="stat-card">
+        <div>
+          <div class="stat-label">Verified Check-ins</div>
+          <div class="stat-value" id="kpiTotalAttendance">0</div>
+          <div class="stat-hint">Total recorded</div>
+        </div>
+        <div class="stat-icon stat-icon-cyan">✅</div>
+      </div>
+
+      <div class="stat-card">
+        <div>
+          <div class="stat-label">Active Users</div>
+          <div class="stat-value" id="kpiTotalMembers">0</div>
+          <div class="stat-hint">Staff &amp; Agents</div>
+        </div>
+        <div class="stat-icon stat-icon-amber">👥</div>
+      </div>
+    </section>
+
+    <!-- TAB 1: EVENTS MANAGEMENT -->
+    <section id="tab-events" class="tab-content-panel">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Events &amp; QR Sessions</h2>
+          <div class="section-subtitle">Generate secure QR codes, set GPS geofence radius, and manage check-in windows.</div>
+        </div>
+      </div>
+
+      <div class="card-panel">
+        <div class="events-grid" id="eventsGrid">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: LIVE ATTENDANCE RECORDS -->
+    <section id="tab-attendance" class="tab-content-panel">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Live Attendance Records</h2>
+          <div class="section-subtitle">Real-time attendance logs with verified timestamps and GPS geofence distance.</div>
+        </div>
+        <div class="section-actions">
+          <span class="badge badge-neutral" id="attendanceRecordCount">0 records</span>
+          <button class="btn btn-secondary btn-sm" id="btnExportCsv">
+            📥 Export to CSV / Excel
+          </button>
+        </div>
+      </div>
+
+      <div class="card-panel">
+        <!-- Live Real-Time Feed Command Bar -->
+        <div class="live-stream-bar">
+          <div class="live-stream-left">
+            <div class="live-status-pill">
+              <span class="pulse-indicator"></span>
+              <span class="live-status-text">LIVE REALTIME FEED ACTIVE</span>
+            </div>
+            <div class="live-ticker" id="liveTicker">
+              <span class="ticker-pulse">⚡</span>
+              <span id="tickerMessage">Real-time sync listening for check-ins across all devices...</span>
+            </div>
+          </div>
+          <div class="live-actions">
+            <button type="button" class="btn btn-ghost btn-sm" id="btnToggleSound" title="Toggle audio chime on verified check-in">
+              🔔 <span id="soundToggleLabel">Sound: ON</span>
+            </button>
+            <button type="button" class="btn btn-primary btn-sm btn-simulate" id="btnSimulateCheckin" title="Simulate an instant verified check-in to test the live stream, chime, and chart animations">
+              ⚡ Test Live Stream
+            </button>
+          </div>
+        </div>
+
+        <!-- Interactive Filters Bar -->
+        <div class="filter-bar">
+          <div class="filter-group">
+            <select class="form-control form-select" id="filterEvent" title="Filter attendance by event" aria-label="Filter attendance by event">
+              <option value="">All Events</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <select class="form-control form-select" id="filterMode" title="Filter attendance by check-in mode" aria-label="Filter attendance by check-in mode">
+              <option value="All">All Modes</option>
+              <option value="ATTENDEE_SCAN">📲 Scanned Staff Beacon</option>
+              <option value="HOST_SELF">⭐ Host Self Check-In</option>
+              <option value="VENUE_STATIC_QR">🏢 Venue Static QR</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <select class="form-control form-select" id="filterRole" title="Filter attendance by role" aria-label="Filter attendance by role">
+              <option value="All">All Roles</option>
+              <option value="Staff">Staff Only</option>
+              <option value="Agent">Agent Only</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <select class="form-control form-select" id="filterDivision" title="Filter attendance by division" aria-label="Filter attendance by division">
+              <option value="All">All Divisions</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <select class="form-control form-select" id="filterBranch" title="Filter attendance by branch" aria-label="Filter attendance by branch">
+              <option value="All">All Branches</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <input type="date" class="form-control" id="filterDate" title="Filter attendance by date" aria-label="Filter attendance by date" placeholder="YYYY-MM-DD" />
+          </div>
+          <div class="filter-group filter-search-group">
+            <input type="text" class="form-control" id="filterSearch" placeholder="🔍 Search by name or code..." title="Search attendance records" aria-label="Search attendance records" />
+          </div>
+        </div>
+
+        <!-- Table View -->
+        <div class="table-responsive">
+          <div class="mobile-table-hint">👉 Swipe horizontally to view full table details</div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Attendee &amp; Code</th>
+                <th>Role</th>
+                <th>Division &amp; Branch</th>
+                <th>Event Name</th>
+                <th>Check-in Time</th>
+                <th>Venue Distance</th>
+                <th>Host / Mode</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="attendanceTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB: VISUAL ANALYTICS & INTELLIGENCE -->
+    <section id="tab-analytics" class="tab-content-panel" style="display: none;">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Attendance Intelligence &amp; Analytics</h2>
+          <div class="section-subtitle">Real-time velocity curves, demographic distribution, geofence accuracy, and arrival punctuality.</div>
+        </div>
+        <div class="section-actions">
+          <div class="filter-group">
+            <select class="form-control form-select" id="analyticsEventFilter" title="Select event for analytics" aria-label="Select event for analytics">
+              <option value="All">🌐 All Events (Aggregated)</option>
+            </select>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshAnalytics" title="Refresh charts data">
+            🔄 Refresh
+          </button>
+        </div>
+      </div>
+
+      <!-- Top Analytics Metric Ribbon -->
+      <div class="analytics-kpi-grid">
+        <div class="analytics-kpi-card">
+          <div class="kpi-icon-wrap kpi-indigo">📊</div>
+          <div>
+            <div class="kpi-subhead">Turnout Rate</div>
+            <div class="kpi-metric" id="analyticsKpiTurnout">0 (0%)</div>
+            <div class="kpi-note" id="analyticsKpiTurnoutSub">Authorized users checked in</div>
+          </div>
+        </div>
+
+        <div class="analytics-kpi-card">
+          <div class="kpi-icon-wrap kpi-cyan">⚡</div>
+          <div>
+            <div class="kpi-subhead">Peak Velocity</div>
+            <div class="kpi-metric" id="analyticsKpiVelocity">0 / window</div>
+            <div class="kpi-note">Rush-hour check-in surge</div>
+          </div>
+        </div>
+
+        <div class="analytics-kpi-card">
+          <div class="kpi-icon-wrap kpi-emerald">📍</div>
+          <div>
+            <div class="kpi-subhead">Avg Venue Distance</div>
+            <div class="kpi-metric" id="analyticsKpiDistance">0 m</div>
+            <div class="kpi-note">Within geofence radius</div>
+          </div>
+        </div>
+
+        <div class="analytics-kpi-card">
+          <div class="kpi-icon-wrap kpi-amber">⏱️</div>
+          <div>
+            <div class="kpi-subhead">Punctuality Index</div>
+            <div class="kpi-metric" id="analyticsKpiPunctuality">100% On-Time</div>
+            <div class="kpi-note">Arrived within session window</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Visual Charts Grid -->
+      <div class="analytics-charts-grid">
+        <!-- 1. Arrival Velocity Timeline -->
+        <div class="chart-card chart-card-wide">
+          <div class="chart-card-header">
+            <div>
+              <h3 class="chart-title">Arrival Velocity Timeline (Rush Curve)</h3>
+              <p class="chart-desc">Check-in frequency over the course of the event hours showing peak arrival surges.</p>
+            </div>
+            <span class="badge badge-info">Realtime Area</span>
+          </div>
+          <div class="chart-canvas-container velocity-canvas">
+            <canvas id="chartVelocity"></canvas>
+          </div>
+        </div>
+
+        <!-- 2. Role Composition -->
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <div>
+              <h3 class="chart-title">Role Composition</h3>
+              <p class="chart-desc">Staff vs Field Agent attendance ratio.</p>
+            </div>
+            <span class="badge badge-neutral">Doughnut</span>
+          </div>
+          <div class="chart-canvas-container">
+            <canvas id="chartRole"></canvas>
+          </div>
+        </div>
+
+        <!-- 3. Division & Branch Breakdown -->
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <div>
+              <h3 class="chart-title">Turnout by Division</h3>
+              <p class="chart-desc">Participation rate across business departments.</p>
+            </div>
+            <span class="badge badge-neutral">Horizontal Bar</span>
+          </div>
+          <div class="chart-canvas-container">
+            <canvas id="chartDivision"></canvas>
+          </div>
+        </div>
+
+        <!-- 4. Geofence Distance & Accuracy -->
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <div>
+              <h3 class="chart-title">Venue GPS Proximity Distribution</h3>
+              <p class="chart-desc">Attendee distance from venue pin at check-in moment.</p>
+            </div>
+            <span class="badge badge-neutral">Proximity</span>
+          </div>
+          <div class="chart-canvas-container">
+            <canvas id="chartGeofence"></canvas>
+          </div>
+        </div>
+
+        <!-- 5. Arrival Punctuality -->
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <div>
+              <h3 class="chart-title">Arrival Punctuality Distribution</h3>
+              <p class="chart-desc">Early birds vs on-time arrivals vs late check-ins.</p>
+            </div>
+            <span class="badge badge-neutral">Punctuality</span>
+          </div>
+          <div class="chart-canvas-container">
+            <canvas id="chartPunctuality"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: MASTER RECORDS (User Master) -->
+    <section id="tab-masters" class="tab-content-panel">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">User Master Directory</h2>
+          <div class="section-subtitle">Manage authorized staff and agent rosters, phone verification records, and activation status.</div>
+        </div>
+        <div class="section-actions">
+          <span class="badge badge-neutral" id="memberRecordCount">0 users</span>
+          <button class="btn btn-secondary btn-sm" id="btnOpenBulkImport">
+            📥 Bulk Import CSV
+          </button>
+          <button class="btn btn-primary btn-sm" id="btnOpenAddMember">
+            + Add New User
+          </button>
+        </div>
+      </div>
+
+      <div class="card-panel">
+        <!-- User Master Interactive Filters Bar -->
+        <div class="filter-bar filter-bar-spaced">
+          <!-- 1. Select Particular Staff or Agent -->
+          <div class="filter-group filter-group-user-select">
+            <select class="form-control form-select" id="filterMemberSelect" title="Select particular staff or agent">
+              <option value="All">👤 All Staff &amp; Agents</option>
+            </select>
+          </div>
+
+          <!-- 2. Role Filter -->
+          <div class="filter-group">
+            <select class="form-control form-select" id="filterMemberRole" title="Filter users by role" aria-label="Filter users by role">
+              <option value="All">All Roles</option>
+              <option value="Staff">👔 Staff Only</option>
+              <option value="Agent">🤝 Agent Only</option>
+            </select>
+          </div>
+
+          <!-- 3. Division Filter -->
+          <div class="filter-group">
+            <select class="form-control form-select" id="filterMemberDivision" title="Filter users by division" aria-label="Filter users by division">
+              <option value="All">All Divisions</option>
+            </select>
+          </div>
+
+          <!-- 4. Branch Filter (Cascades with Division) -->
+          <div class="filter-group">
+            <select class="form-control form-select" id="filterMemberBranch" title="Filter users by branch" aria-label="Filter users by branch">
+              <option value="All">All Branches</option>
+            </select>
+          </div>
+
+          <!-- 5. Status Filter -->
+          <div class="filter-group">
+            <select class="form-control form-select" id="filterMemberStatus" title="Filter users by activation status" aria-label="Filter users by activation status">
+              <option value="All">All Statuses</option>
+              <option value="active">Active Only</option>
+              <option value="inactive">Inactive Only</option>
+            </select>
+          </div>
+
+          <!-- 6. Search Bar -->
+          <div class="filter-group filter-search-group">
+            <input type="text" class="form-control" id="filterMemberSearch" placeholder="🔍 Search name, code, or phone..." title="Search users directory" aria-label="Search users directory" />
+          </div>
+
+          <!-- 7. Reset Filters Button -->
+          <div class="filter-group">
+            <button type="button" class="btn btn-ghost btn-sm" id="btnResetMemberFilters" title="Reset all filters">
+              ↺ Reset
+            </button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <div class="mobile-table-hint">👉 Swipe horizontally to view full table details</div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Full Name</th>
+                <th>Member Code</th>
+                <th>Role</th>
+                <th>Division &amp; Branch</th>
+                <th>Registered Mobile</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="membersTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: AUDIT LOGS -->
+    <section id="tab-audit" class="tab-content-panel">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Security &amp; Validation Audit Logs</h2>
+          <div class="section-subtitle">Immutable audit trail of all check-in attempts, geofence validations, and security blocks.</div>
+        </div>
+      </div>
+
+      <div class="card-panel">
+        <div class="table-responsive">
+          <div class="mobile-table-hint">👉 Swipe horizontally to view full table details</div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Action</th>
+                <th>Status</th>
+                <th>Details / Validation Failure</th>
+                <th>User Agent</th>
+              </tr>
+            </thead>
+            <tbody id="auditLogsTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- =========================================================================
+       MODALS
+       ========================================================================= -->
+
+  <!-- 1. CREATE EVENT MODAL -->
+  <div class="modal-backdrop" id="createEventModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">Create New Attendance Event</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <form id="createEventForm">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label" for="eventName">Event Name <span class="required">*</span></label>
+            <input type="text" id="eventName" class="form-control" placeholder="e.g., Annual Strategy Summit 2026" required />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="eventVenue">Venue Location <span class="required">*</span></label>
+            <input type="text" id="eventVenue" class="form-control" placeholder="e.g., Grand Hyatt Ballroom, Hall 3" required />
+          </div>
+
+          <div class="form-row-2col">
+            <div class="form-group">
+              <label class="form-label" for="eventDate">Event Date <span class="required">*</span></label>
+              <input type="date" id="eventDate" class="form-control" required />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="eventPermittedRoles">Permitted Roles</label>
+              <select id="eventPermittedRoles" class="form-control form-select" title="Permitted attendee roles" aria-label="Permitted attendee roles">
+                <option value="All">All (Staff &amp; Agents)</option>
+                <option value="Staff">Staff Only</option>
+                <option value="Agent">Agent Only</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row-2col">
+            <div class="form-group">
+              <label class="form-label" for="eventStartTime">Check-in Opens (Start)</label>
+              <input type="time" id="eventStartTime" class="form-control" value="08:00" required />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="eventEndTime">Check-in Closes (End)</label>
+              <input type="time" id="eventEndTime" class="form-control" value="20:00" required />
+            </div>
+          </div>
+
+          <!-- Geofence Coordinates -->
+          <div class="form-group geofence-box">
+            <div class="geofence-header">
+              <label class="form-label label-no-margin">📍 Venue GPS Coordinates &amp; Geofence</label>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnDetectAdminGps">
+                🎯 Use Current GPS Location
+              </button>
+            </div>
+
+            <!-- Interactive Leaflet Map Picker -->
+            <div class="geofence-map-wrapper" style="margin-bottom: 14px;">
+              <div class="map-toolbar">
+                <span style="font-weight:600; color:#1e293b; display:inline-flex; align-items:center; gap:6px;">
+                  <span>🗺️</span> Interactive Geofence Map Picker
+                </span>
+                <span style="font-size:0.75rem; color:#64748b;">Click map or drag pin to position</span>
+              </div>
+              <div id="adminGeofenceMap" class="geofence-map-container admin-picker"></div>
+            </div>
+
+            <div class="form-row-coords">
+              <input type="number" step="any" id="eventLatitude" class="form-control" placeholder="Latitude (e.g. 28.6139)" title="Venue latitude coordinates" aria-label="Venue latitude coordinates" />
+              <input type="number" step="any" id="eventLongitude" class="form-control" placeholder="Longitude (e.g. 77.2090)" title="Venue longitude coordinates" aria-label="Venue longitude coordinates" />
+            </div>
+
+            <div class="form-row-coords coords-spaced">
+              <div>
+                <label class="form-label" for="eventRadius">Allowed Radius (Meters)</label>
+                <input type="number" id="eventRadius" class="form-control" value="50" min="10" max="5000" />
+              </div>
+              <div class="coords-checkbox-wrap">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="eventLocationRequired" checked />
+                  <strong>Enforce Geofence GPS Check</strong>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-modal-dismiss">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Event &amp; Generate QR</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. QR CODE PREVIEW & PRINT MODAL -->
+  <div class="modal-backdrop" id="qrModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title" id="qrModalEventTitle">Event QR Code</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body qr-modal-body">
+        <div class="qr-canvas-box">
+          <canvas id="qrCodeCanvas"></canvas>
+        </div>
+
+        <p class="qr-info-text">
+          Display or print this QR code at the venue entrance. Attendees scan with their phone camera to open the portal.
+        </p>
+
+        <div class="qr-modal-actions">
+          <button class="btn btn-primary btn-sm" id="btnPrintQrSignage">
+            🖨️ Print Venue Standee Signage
+          </button>
+          <button class="btn btn-secondary btn-sm" id="btnDownloadQr">
+            📥 Download PNG
+          </button>
+        </div>
+
+        <div class="qr-link-copy-box">
+          <input type="text" id="qrDirectLink" class="qr-link-input" readonly aria-label="Direct QR check-in link" title="Direct QR check-in link" placeholder="Direct QR check-in link" />
+          <button type="button" class="btn btn-secondary btn-sm" id="btnCopyQrLink">Copy</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-modal-dismiss">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2B. AUTHORIZED STAFF ROTATING QR BEACONS MODAL -->
+  <div class="modal-backdrop" id="hostsModal">
+    <div class="modal-card modal-card-hosts">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">👥 Authorized Staff QR Beacons</h3>
+          <div class="hosts-modal-header-desc" id="hostsModalEventSubtitle">
+            Authorize 20+ designated staff members to broadcast rotating, anti-screenshot QR codes on their mobile screens.
+          </div>
+        </div>
+        <button class="modal-close">&times;</button>
+      </div>
+
+      <div class="hosts-toolbar">
+        <input type="text" class="form-control hosts-search-input" id="hostsSearchInput" placeholder="🔍 Filter staff name or code..." title="Filter staff members" aria-label="Filter staff members" />
+        <div class="hosts-quick-actions">
+          <button type="button" class="btn btn-secondary btn-sm" id="btnSelectAllHosts">Select All 20+ Staff</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnDeselectAllHosts">Deselect All</button>
+          <span class="badge badge-neutral" id="hostsSelectedCount">0 Authorized</span>
+        </div>
+      </div>
+
+      <div class="hosts-table-container">
+        <table class="hosts-list-table">
+          <thead>
+            <tr>
+              <th style="width: 44px; text-align: center;">Auth</th>
+              <th>Staff Member</th>
+              <th>Division &amp; Branch</th>
+              <th>Designated Station</th>
+              <th style="text-align: right;">Beacon Actions</th>
+            </tr>
+          </thead>
+          <tbody id="hostsTableBody">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </div>
+
+      <div class="modal-footer" style="justify-content: space-between;">
+        <div style="font-size:0.75rem; color:var(--text-secondary);">
+          🔒 QR codes rotate dynamically every 20s. Screenshots expire automatically.
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" class="btn btn-secondary btn-modal-dismiss">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btnSaveAuthorizedHosts">Save &amp; Update Beacons</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. ADD USER MODAL -->
+  <div class="modal-backdrop" id="memberModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">Add Master User Record</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <form id="memberForm">
+        <div class="modal-body">
+          <div class="form-row-2col">
+            <div class="form-group">
+              <label class="form-label" for="memberRole">Role <span class="required">*</span></label>
+              <select id="memberRole" class="form-control form-select" title="Select member role" aria-label="Select member role" required>
+                <option value="Staff">Staff</option>
+                <option value="Agent">Agent</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="memberCode">Code <span class="required">*</span></label>
+              <input type="text" id="memberCode" class="form-control" placeholder="e.g., STF-1004" required />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="memberName">Full Name <span class="required">*</span></label>
+            <input type="text" id="memberName" class="form-control" placeholder="e.g., Jonathan Sterling" required />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="memberPhone">Registered Mobile Number <span class="required">*</span></label>
+            <input type="tel" id="memberPhone" class="form-control" placeholder="10-digit mobile number" required />
+            <div class="form-hint">Used for 2-factor identity validation during QR check-in.</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="memberDivision">Division <span class="required">*</span></label>
+            <select id="memberDivision" class="form-control form-select" title="Select member division" aria-label="Select member division" required>
+              <option value="">Select Division</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="memberBranch">Branch <span class="required">*</span></label>
+            <select id="memberBranch" class="form-control form-select" title="Select member branch" aria-label="Select member branch" required>
+              <option value="">Select Division First</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="memberIsActive" checked />
+              <strong>Account is Active</strong>
+            </label>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-modal-dismiss">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save User</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 3B. BULK ROSTER IMPORT MODAL -->
+  <div class="modal-backdrop" id="bulkImportModal">
+    <div class="modal-card modal-card-lg">
+      <div class="modal-header">
+        <h3 class="modal-title">📥 Bulk Import Member Roster</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="form-hint" style="margin-bottom: var(--space-md); font-size: 0.9rem;">
+          Upload a CSV spreadsheet containing staff and agent profiles to quickly populate your master directory.
+          Existing member codes will be skipped automatically to prevent duplicates.
+        </p>
+
+        <div style="display: flex; gap: var(--space-md); align-items: center; margin-bottom: var(--space-md); flex-wrap: wrap;">
+          <button type="button" class="btn btn-secondary btn-sm" id="btnDownloadCsvSample">
+            📄 Download Sample CSV Template
+          </button>
+          <span style="font-size: 0.8rem; color: var(--color-text-muted);">
+            Columns: <code>FullName, MemberCode, Role, Division, Branch, PhoneNumber</code>
+          </span>
+        </div>
+
+        <div class="bulk-dropzone" id="csvDropzone" style="border: 2px dashed var(--color-border); border-radius: var(--radius-lg); padding: var(--space-xl); text-align: center; background: var(--color-bg-secondary); cursor: pointer; transition: all 0.2s;">
+          <input type="file" id="csvFileInput" accept=".csv,text/csv" style="display: none;" />
+          <div style="font-size: 2.2rem; margin-bottom: var(--space-xs);">📁</div>
+          <div style="font-weight: 600; color: var(--color-text-primary); margin-bottom: 4px;">Click to select or drag &amp; drop CSV file</div>
+          <div style="font-size: 0.8rem; color: var(--color-text-muted);">Supports standard CSV files (UTF-8 format)</div>
+        </div>
+
+        <!-- Preview & Validation State -->
+        <div id="csvPreviewSection" style="display: none; margin-top: var(--space-lg);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-sm); flex-wrap: wrap; gap: var(--space-xs);">
+            <h4 style="margin: 0; font-size: 0.95rem; font-weight: 600; color: var(--color-text-primary);">
+              Import Preview: <span id="csvFileSummary" style="color: var(--color-primary); font-weight: 700;">0 records</span>
+            </h4>
+            <div style="display: flex; gap: var(--space-xs);">
+              <span class="badge badge-success" id="csvBadgeValid">0 new</span>
+              <span class="badge badge-neutral" id="csvBadgeDuplicates">0 existing skipped</span>
+            </div>
+          </div>
+
+          <div style="max-height: 220px; overflow-y: auto; border: 1px solid var(--color-border); border-radius: var(--radius-md);">
+            <table class="data-table" style="font-size: 0.8rem; margin: 0;">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Full Name</th>
+                  <th>Member Code</th>
+                  <th>Role</th>
+                  <th>Division</th>
+                  <th>Branch</th>
+                  <th>Phone Number</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="csvPreviewTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="csvImportStatus" style="display: none; margin-top: var(--space-md);"></div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-modal-dismiss">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btnConfirmBulkImport" disabled>
+          🚀 Confirm &amp; Import Roster
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. SETTINGS & SUPABASE MODAL -->
+  <div class="modal-backdrop" id="settingsModal">
+    <div class="modal-card modal-card-lg">
+      <div class="modal-header">
+        <h3 class="modal-title">Supabase &amp; System Configuration</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <form id="supabaseConfigForm">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label" for="runModeSelect">Data Engine Mode</label>
+            <select id="runModeSelect" class="form-control form-select" title="Data engine mode" aria-label="Data engine mode">
+              <option value="supabase">⚡ Live Supabase Cloud Database</option>
+              <option value="demo">🧪 Test/Demo Mode (Local Storage)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="supabaseUrl">Supabase Project URL</label>
+            <input type="url" id="supabaseUrl" class="form-control" placeholder="https://your-project.supabase.co" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="supabaseAnonKey">Supabase Anon Public API Key</label>
+            <input type="password" id="supabaseAnonKey" class="form-control" placeholder="eyJhbGciOiJIUzI1NiIsIn..." />
+            <div class="form-hint">
+              🛡️ Safe to enter in frontend. Service-role keys must NEVER be placed here.
+            </div>
+          </div>
+
+          <div class="test-conn-row">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnTestSupabase">
+              🔍 Test Connection
+            </button>
+            <div id="testConnStatus" class="test-conn-status"></div>
+          </div>
+
+          <div class="schema-sql-section">
+            <label class="form-label">Database Schema &amp; Seed SQL</label>
+            <p class="schema-sql-desc">
+              Ready-to-run PostgreSQL schema with RLS policies and stored procedures is saved at <code>supabase/schema.sql</code>.
+            </p>
+            <div class="code-preview-box">
+-- Execute in Supabase SQL Editor:
+-- File: supabase/schema.sql &amp; supabase/seed.sql
+CREATE TABLE divisions (...);
+CREATE TABLE branches (...);
+CREATE TABLE members (...);
+CREATE TABLE events (...);
+CREATE TABLE attendance (...);
+CREATE TABLE audit_logs (...);
+-- Secure atomic check-in RPC:
+CREATE OR REPLACE FUNCTION submit_attendance(...) ...
+            </div>
+          </div>
+
+          <div class="settings-danger-row">
+            <button type="button" class="btn btn-ghost btn-sm btn-danger-ghost" id="btnResetDemoData">
+              ⚠️ Reset Local Demo Data
+            </button>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-modal-dismiss">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Settings</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- App Bootstrap -->
+  <script type="module">
+    import { initAdminPortal } from '/js/admin.js';
+    import { initDesktopInstall } from '/js/pwa-install.js';
+    document.addEventListener('DOMContentLoaded', () => {
+      initDesktopInstall();
+      initAdminPortal();
+    });
+  </script>
+</body>
+</html>

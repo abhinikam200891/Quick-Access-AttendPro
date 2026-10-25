@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Event Check-In | Quick Access AttendPro</title>
+  <meta name="description" content="Mobile-friendly and desktop-responsive QR code event attendance check-in portal with GPS geofence verification." />
+  <link rel="icon" type="image/png" href="/assets/logo.png" />
+  <link rel="apple-touch-icon" href="/assets/icon-192.png" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="QA AttendPro" />
+  <link rel="stylesheet" href="/css/common.css" />
+  <link rel="stylesheet" href="/css/checkin.css" />
+</head>
+<body class="mobile-viewport">
+  <!-- Desktop / Laptop Topbar Navigation -->
+  <header class="checkin-topbar">
+    <div class="checkin-topbar-brand">
+      <img src="/assets/logo.png" alt="Quick Access AttendPro Logo" class="brand-logo-img sm" />
+      <div>
+        <span class="brand-title-text">Quick Access AttendPro</span>
+        <span class="brand-badge-pill">Check-In Portal</span>
+      </div>
+    </div>
+    <div class="checkin-topbar-actions">
+      <button type="button" class="view-toggle-btn" id="btnCheckinCameraScan" title="Scan QR Code with In-App Camera">
+        📷 <span class="btn-install-text">Scan QR</span>
+      </button>
+      <button type="button" class="view-toggle-btn btn-install-app" id="btnCheckinInstallApp" title="Install as standalone desktop app on your computer">
+        💻 <span class="btn-install-text">Install App</span>
+      </button>
+      <button type="button" class="view-toggle-btn" id="btnToggleDeviceView" title="Toggle between Desktop and Phone views on computer">
+        <span id="viewToggleIcon">📱</span> <span id="viewToggleLabel">Phone View</span>
+      </button>
+      <a href="/admin.html" class="topbar-admin-link">
+        💻 Admin Portal &rarr;
+      </a>
+    </div>
+  </header>
+
+  <main class="mobile-card">
+    <!-- 1. LOADING STATE -->
+    <div id="loadingState" class="loading-box">
+      <div class="spinner spinner-primary loading-spinner"></div>
+      <div class="loading-title">Verifying Event QR Code...</div>
+      <div class="loading-subtitle">Connecting to secure check-in portal</div>
+    </div>
+
+    <!-- 3. ERROR BANNER (If event is invalid or inactive) -->
+    <div id="errorBannerCard" class="error-banner-card is-hidden">
+      <div class="error-banner-icon">
+        ⚠️
+      </div>
+      <h2 id="errorBannerTitle" class="error-banner-title">Unable to Load Event</h2>
+      <p id="errorBannerMessage" class="error-banner-desc">
+        The event could not be verified.
+      </p>
+      <div style="display:flex; gap:10px; margin-top:16px;">
+        <button type="button" class="btn btn-primary btn-block" id="btnErrorScanQr">📷 Scan with Camera</button>
+        <a href="/index.html" class="btn btn-secondary btn-block">Return to Home</a>
+      </div>
+    </div>
+
+    <!-- 4. MAIN CHECK-IN FORM CONTAINER -->
+    <div id="checkinFormContainer" class="is-hidden">
+      <!-- Header Banner with 1. Company Logo & Name, then 2. Event Name & Venue Details -->
+      <header class="portal-header">
+        <!-- 1. Company Logo & Company Name at very top of attendance screen -->
+        <div class="company-brand-header">
+          <img src="/assets/logo.png" alt="Quick Access AttendPro Logo" class="company-logo" />
+          <div class="company-brand-info">
+            <div class="company-name">Quick Access AttendPro</div>
+            <div class="company-tagline">Official Attendance Portal</div>
+          </div>
+        </div>
+
+        <!-- 2. Below that: Event Name and Venue Details -->
+        <div class="event-info-section">
+          <h1 class="event-display-name" id="eventHeadingName">Loading Event...</h1>
+
+          <div class="event-details-grid">
+            <div class="event-detail-item">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+              </svg>
+              <span id="eventVenueDisplay" class="venue-text-truncate">Venue</span>
+            </div>
+
+            <div class="event-detail-item">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+              </svg>
+              <span id="eventDateDisplay">Date</span>
+            </div>
+
+            <div class="event-detail-item">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <span>Window: <strong id="eventTimeDisplay">08:00 - 20:00</strong></span>
+            </div>
+          </div>
+
+          <!-- Dynamic Host Beacon Verified Banner -->
+          <div class="scanned-beacon-badge is-hidden" id="scannedBeaconBanner">
+            <span class="beacon-pulse-dot"></span>
+            <div>
+              <div class="beacon-badge-title">Scanned via Authorized Host Beacon</div>
+              <div class="beacon-badge-sub" id="scannedBeaconHostDetails">Alexander Wright (STF-1001) &bull; Gate 1</div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Check-in Form Body -->
+      <div class="portal-body">
+        <form id="userCheckinForm">
+          <!-- Step 1: Role Selection -->
+          <div class="form-group form-group-mb16">
+            <label class="form-label">Select Your Role <span class="required">*</span></label>
+            <div class="role-segmented-control">
+              <button type="button" class="role-option-btn active" id="roleBtnStaff">
+                <span>👔</span> Staff
+              </button>
+              <button type="button" class="role-option-btn" id="roleBtnAgent">
+                <span>🤝</span> Agent
+              </button>
+            </div>
+          </div>
+
+          <!-- Step 2: Cascading Division & Branch Dropdowns -->
+          <div class="form-row-2col">
+            <div class="form-group">
+              <label class="form-label" for="selectDivision">Division <span class="required">*</span></label>
+              <select id="selectDivision" class="form-control form-select" title="Select division" aria-label="Select division" required>
+                <option value="">-- Select Division --</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="selectBranch">Branch <span class="required">*</span></label>
+              <select id="selectBranch" class="form-control form-select" title="Select branch" aria-label="Select branch" disabled required>
+                <option value="">-- Select Division First --</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Quick Search Filter for Large Branch Rosters -->
+          <div class="form-group form-group-mb16 is-hidden" id="memberSearchWrapper">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+              <label class="form-label label-no-margin" for="inputMemberSearch">🔍 Fast Name/Code Filter</label>
+              <span class="badge badge-neutral" id="memberSearchMatchCount" style="font-size:0.65rem;">All Members</span>
+            </div>
+            <input
+              type="text"
+              id="inputMemberSearch"
+              class="form-control"
+              placeholder="Type to quickly filter your name or employee code..."
+              autocomplete="off"
+            />
+          </div>
+
+          <!-- Step 3: Member Name & Code Dropdowns (Filtered by Branch) -->
+          <div class="form-row-2col">
+            <div class="form-group">
+              <label class="form-label" for="selectMemberName">Select Your Name <span class="required">*</span></label>
+              <select id="selectMemberName" class="form-control form-select" title="Select your name" aria-label="Select your name" disabled required>
+                <option value="">-- Select Branch First --</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" id="codeLabel" for="selectMemberCode">Select Employee Code <span class="required">*</span></label>
+              <select id="selectMemberCode" class="form-control form-select" title="Select employee or agent code" aria-label="Select employee or agent code" disabled required>
+                <option value="">-- Select Branch First --</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Step 4: Registered Mobile Number (Auto-filled upon selection) -->
+          <div class="form-group form-group-mb16">
+            <label class="form-label" for="inputPhoneNumber">Registered Mobile Number <span class="required">*</span></label>
+            <input
+              type="tel"
+              id="inputPhoneNumber"
+              class="form-control"
+              placeholder="10-digit mobile number"
+              title="Registered 10-digit mobile number"
+              aria-label="Registered 10-digit mobile number"
+              pattern="[0-9]{10}"
+              maxlength="15"
+              required
+            />
+            <small class="form-helper-note">
+              Auto-filled when you select your name or code above.
+            </small>
+          </div>
+
+          <!-- Step 5: GPS Geofence Radar Card -->
+          <div class="gps-status-card">
+            <div class="gps-info">
+              <div class="radar-dot" id="gpsRadarDot"></div>
+              <div>
+                <div class="gps-text-title" id="gpsStatusTitle">Venue Geolocation</div>
+                <div class="gps-text-sub" id="gpsStatusSub">Checking location permissions...</div>
+              </div>
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm btn-refresh-gps" id="btnRetryGps">
+              🔄 Refresh
+            </button>
+          </div>
+
+          <!-- Interactive Geofence Radar Mini-Map -->
+          <div class="geofence-map-wrapper is-hidden" id="checkinRadarMapWrapper" style="margin-top: 10px; margin-bottom: 16px;">
+            <div class="map-toolbar">
+              <span style="font-weight:700; color:#1e293b; display:inline-flex; align-items:center; gap:6px;">
+                <span>🗺️</span> Venue Geofence Radar
+              </span>
+              <span class="map-status-pill inside" id="radarStatusPill">50m Perimeter</span>
+            </div>
+            <div id="checkinRadarMap" class="geofence-map-container radar-mini"></div>
+          </div>
+
+          <!-- Submit Button -->
+          <div class="submit-btn-wrapper">
+            <button type="submit" class="btn-checkin-submit" id="btnSubmitCheckin">
+              <span class="spinner spinner-hidden" id="submitBtnSpinner"></span>
+              <span id="submitBtnText">Confirm &amp; Mark Attendance</span>
+            </button>
+          </div>
+
+          <div class="security-footer">
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+            </svg>
+            <span>Secured with Supabase RLS &bull; Anti-Spoofing &bull; Single-Checkin</span>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 5. SUCCESS SCREEN: DIGITAL ATTENDANCE PASS / TICKET -->
+    <div id="passTicketContainer" class="pass-ticket-wrapper is-hidden">
+      <div class="pass-ticket">
+        <div class="pass-top">
+          <div class="verified-icon-circle">
+            <svg width="36" height="36" fill="none" viewBox="0 0 24 24" stroke="#ffffff">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+            </svg>
+          </div>
+          <h2 id="passVerifiedTitle">Attendance Verified!</h2>
+          <p id="passVerifiedSubtitle">Official Digital Receipt Recorded</p>
+          <div id="passOfflineBadge" class="badge badge-warning is-hidden" style="margin-top: 8px; font-size: 0.72rem;">
+            ⏳ Stashed Offline &bull; Will Sync When Connected
+          </div>
+        </div>
+
+        <!-- Ticket cut divider -->
+        <div class="ticket-divider">
+          <div class="ticket-divider-line"></div>
+        </div>
+
+        <div class="pass-body">
+          <div class="pass-data-grid">
+            <div class="pass-field">
+              <strong>Attendee Name</strong>
+              <span id="passMemberName">-</span>
+            </div>
+            <div class="pass-field">
+              <strong>Role &amp; Code</strong>
+              <span><span class="badge badge-info" id="passRoleBadge">Staff</span> <span id="passMemberCode" class="pass-code-mono">-</span></span>
+            </div>
+            <div class="pass-field">
+              <strong>Division</strong>
+              <span id="passDivision">-</span>
+            </div>
+            <div class="pass-field">
+              <strong>Branch</strong>
+              <span id="passBranch">-</span>
+            </div>
+            <div class="pass-field pass-field-full">
+              <strong>Event &amp; Venue</strong>
+              <span id="passEventName">-</span>
+              <div class="pass-field-venue" id="passVenue">-</div>
+            </div>
+            <div class="pass-field">
+              <strong>Verified At</strong>
+              <span id="passTimestamp" class="pass-timestamp-text">-</span>
+            </div>
+            <div class="pass-field">
+              <strong>GPS Distance</strong>
+              <span id="passGpsDistance" class="pass-distance-text">-</span>
+            </div>
+            <div class="pass-field pass-field-full" id="passHostField">
+              <strong>Verification Mode &amp; Beacon Host</strong>
+              <span id="passVerifiedBy" style="color:var(--primary);font-weight:700;">Venue Official QR</span>
+            </div>
+          </div>
+
+          <div class="pass-barcode-box">
+            <div class="barcode-ref-label">Verification Ref ID</div>
+            <div class="barcode-ref" id="passTicketRef">PASS-94821X</div>
+          </div>
+
+          <div class="pass-actions-row">
+            <button type="button" class="btn btn-primary" id="btnDownloadPassImage" title="Download verified attendance ticket as PNG image">
+              💾 Save Image
+            </button>
+            <button type="button" class="btn btn-secondary" id="btnSharePassTicket" title="Share your verified attendance via WhatsApp or Apps">
+              📲 Share Pass
+            </button>
+            <button type="button" class="btn btn-ghost" id="btnPrintPassTicket" title="Print physical copy">
+              🖨️ Print
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- REJECTION / FAILURE MODAL -->
+  <div class="modal-backdrop" id="rejectionModal">
+    <div class="modal-card rejection-card">
+      <div class="modal-body rejection-card-body">
+        <div class="rejection-card-icon">
+          ✕
+        </div>
+        <h3 class="rejection-card-title">Check-In Rejected</h3>
+        <p id="rejectionMessageText" class="rejection-card-msg">
+          Validation failed.
+        </p>
+        <button type="button" class="btn btn-danger btn-block" id="btnRejectionClose">
+          Review &amp; Try Again
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Check-in Controller Bootstrap -->
+  <script type="module">
+    import { initCheckInPortal } from '/js/checkin.js';
+    import { initDesktopInstall } from '/js/pwa-install.js';
+    document.addEventListener('DOMContentLoaded', () => {
+      initDesktopInstall();
+      initCheckInPortal();
+    });
+  </script>
+</body>
+</html>

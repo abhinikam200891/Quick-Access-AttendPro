@@ -1,0 +1,123 @@
+/* ==========================================================================
+   Leaflet Geofence Map & Radar Styles
+   ========================================================================== */
+@import 'leaflet/dist/leaflet.css';
+
+.geofence-map-wrapper {
+  position: relative;
+  width: 100%;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  background: #f1f5f9;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.geofence-map-container {
+  width: 100%;
+  height: 240px;
+  z-index: 1;
+}
+
+.geofence-map-container.admin-picker {
+  height: 320px;
+}
+
+.geofence-map-container.radar-mini {
+  height: 200px;
+}
+
+/* Map Header Bar */
+.map-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.8125rem;
+}
+
+.map-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+.map-status-pill.inside {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+.map-status-pill.outside {
+  background: #fef2f2;
+  color: #be123c;
+  border: 1px solid #fecdd3;
+}
+
+/* Custom Marker Styling */
+.custom-venue-pin {
+  background: #6366f1;
+  color: #ffffff;
+  width: 32px;
+  height: 32px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #ffffff;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+.custom-venue-pin span {
+  transform: rotate(45deg);
+  font-size: 14px;
+}
+
+.custom-user-pin {
+  width: 20px;
+  height: 20px;
+  background: #0ea5e9;
+  border: 3px solid #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.4), 0 3px 6px rgba(0, 0, 0, 0.25);
+  position: relative;
+}
+
+.custom-user-pin::after {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  right: -6px;
+  bottom: -6px;
+  border-radius: 50%;
+  border: 2px solid #0ea5e9;
+  animation: radar-wave 2s infinite ease-out;
+}
+
+@keyframes radar-wave {
+  0% { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+.distance-tooltip {
+  background: #0f172a !important;
+  color: #f8fafc !important;
+  border: none !important;
+  border-radius: 6px !important;
+  padding: 4px 8px !important;
+  font-size: 0.75rem !important;
+  font-weight: 600 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
+}
+
+.distance-tooltip::before {
+  border-top-color: #0f172a !important;
+}

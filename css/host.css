@@ -1,0 +1,436 @@
+/* ==========================================================================
+   HOST BEACON PORTAL STYLING (Mobile-First Dynamic QR Display)
+   Optimized for mobile displays, high-contrast QR visibility, and battery efficiency.
+   ========================================================================== */
+
+.host-viewport {
+  min-height: 100vh;
+  background: #0f172a;
+  color: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  margin: 0;
+  font-family: var(--font-body);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Host Topbar */
+.host-topbar {
+  width: 100%;
+  max-width: 560px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.host-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.host-brand-title {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 1.0625rem;
+  color: #ffffff;
+  line-height: 1.2;
+}
+
+.host-brand-sub {
+  font-size: 0.75rem;
+  color: #38bdf8;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.host-wake-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #34d399;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 5px 10px;
+  border-radius: var(--radius-full);
+}
+
+.host-wake-dot {
+  width: 7px;
+  height: 7px;
+  background: #10b981;
+  border-radius: 50%;
+  box-shadow: 0 0 6px #10b981;
+  animation: pulseDot 1.8s infinite;
+}
+
+@keyframes pulseDot {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.5; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Main Container */
+.host-main {
+  width: 100%;
+  max-width: 540px;
+  padding: 18px 20px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* Host Info Card */
+.host-profile-card {
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  box-shadow: var(--shadow-md);
+}
+
+.host-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--primary) 0%, var(--accent-cyan) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
+}
+
+.host-details {
+  flex: 1;
+}
+
+.host-name {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.host-meta {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.host-meta strong {
+  color: #38bdf8;
+  font-family: monospace;
+}
+
+.host-station-badge {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fbbf24;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+/* Selector Panel (if not launched with URL params) */
+.host-selector-panel {
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+
+.host-selector-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 6px;
+}
+
+.host-selector-desc {
+  font-size: 0.8125rem;
+  color: #94a3b8;
+  margin-bottom: 16px;
+}
+
+/* Dynamic Rotating QR Stage */
+.qr-stage-card {
+  background: #ffffff;
+  border-radius: var(--radius-xl);
+  padding: 24px 20px;
+  color: #0f172a;
+  text-align: center;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  position: relative;
+  overflow: hidden;
+  border: 3px solid #38bdf8;
+}
+
+.qr-stage-header {
+  margin-bottom: 16px;
+}
+
+.qr-instruction-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.5px;
+}
+
+.qr-instruction-sub {
+  font-size: 0.8125rem;
+  color: #475569;
+  margin-top: 2px;
+}
+
+/* QR Canvas Frame */
+.qr-canvas-wrapper {
+  position: relative;
+  display: inline-block;
+  padding: 12px;
+  background: #ffffff;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.qr-canvas-wrapper canvas {
+  display: block;
+  width: 250px !important;
+  height: 250px !important;
+  image-rendering: pixelated;
+}
+
+/* Circular Timer Bar */
+.qr-timer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.timer-circle-wrap {
+  position: relative;
+  width: 44px;
+  height: 44px;
+}
+
+.timer-svg {
+  transform: rotate(-90deg);
+  width: 44px;
+  height: 44px;
+}
+
+.timer-bg-circle {
+  stroke: #e2e8f0;
+  stroke-width: 4;
+  fill: none;
+}
+
+.timer-progress-circle {
+  stroke: #4f46e5;
+  stroke-width: 4;
+  stroke-linecap: round;
+  fill: none;
+  stroke-dasharray: 113;
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 0.9s linear, stroke 0.3s ease;
+}
+
+.timer-progress-circle.warning {
+  stroke: #f59e0b;
+}
+
+.timer-progress-circle.danger {
+  stroke: #ef4444;
+}
+
+.timer-seconds-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 0.84rem;
+  font-weight: 800;
+  color: #0f172a;
+  font-family: monospace;
+}
+
+.timer-label-box {
+  text-align: left;
+}
+
+.timer-label-title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.timer-label-sub {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+/* Security Ribbon */
+.qr-security-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  margin-top: 14px;
+}
+
+/* Host Self-Attendance Card */
+.host-self-card {
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-md);
+}
+
+.host-self-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.host-self-icon {
+  font-size: 1.35rem;
+}
+
+.host-self-title {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.host-self-desc {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  line-height: 1.4;
+  margin-bottom: 14px;
+}
+
+.btn-host-self-checkin {
+  width: 100%;
+  padding: 13px 18px;
+  font-family: var(--font-heading);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent-emerald) 0%, #059669 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all var(--transition-fast);
+}
+
+.btn-host-self-checkin:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(16, 185, 129, 0.5);
+}
+
+.btn-host-self-checkin:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Host Verified Success Card */
+.host-already-verified {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #a7f3d0;
+  font-size: 0.85rem;
+}
+
+.host-verified-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #10b981;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+/* Scanned Counter Bar */
+.host-metrics-bar {
+  display: flex;
+  gap: 12px;
+}
+
+.host-metric-box {
+  flex: 1;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  text-align: center;
+}
+
+.host-metric-val {
+  font-family: var(--font-heading);
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: #38bdf8;
+}
+
+.host-metric-lbl {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  margin-top: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Footer note */
+.host-footer-note {
+  font-size: 0.75rem;
+  color: #64748b;
+  text-align: center;
+  margin-top: 8px;
+}
+

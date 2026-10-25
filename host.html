@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Host QR Beacon | Quick Access AttendPro</title>
+  <meta name="description" content="Authorized Staff Mobile QR Beacon Portal with dynamic, continuously rotating QR codes and host self-attendance tracking." />
+  <link rel="icon" type="image/png" href="/assets/logo.png" />
+  <link rel="apple-touch-icon" href="/assets/icon-192.png" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="stylesheet" href="/css/common.css" />
+  <link rel="stylesheet" href="/css/host.css" />
+</head>
+<body class="host-viewport">
+  <!-- Topbar -->
+  <header class="host-topbar">
+    <div class="host-brand">
+      <img src="/assets/logo.png" alt="AttendPro Logo" class="brand-logo-img sm" />
+      <div>
+        <div class="host-brand-title">Quick Access AttendPro</div>
+        <div class="host-brand-sub">MOBILE QR BEACON</div>
+      </div>
+    </div>
+    <div class="host-wake-pill" id="wakeLockStatus" title="Keeps mobile screen from dimming">
+      <span class="host-wake-dot"></span>
+      <span id="wakeLockLabel">Keep-Alive</span>
+    </div>
+  </header>
+
+  <main class="host-main">
+    <!-- 1. Selection Card (Shown if not pre-selected by URL) -->
+    <section class="host-selector-panel" id="hostSelectorCard">
+      <h2 class="host-selector-title">Select Beacon Station &amp; Host</h2>
+      <p class="host-selector-desc">Select the active event and your staff profile to launch your dynamic QR code.</p>
+
+      <div class="form-group">
+        <label class="form-label" for="selectBeaconEvent">Attendance Event <span class="required">*</span></label>
+        <select id="selectBeaconEvent" class="form-control form-select">
+          <option value="">Loading events...</option>
+        </select>
+      </div>
+
+      <div class="form-group" style="margin-top: 14px;">
+        <label class="form-label" for="selectBeaconHost">Authorized Staff Member <span class="required">*</span></label>
+        <select id="selectBeaconHost" class="form-control form-select" disabled>
+          <option value="">Select Event First</option>
+        </select>
+      </div>
+
+      <button type="button" class="btn btn-primary btn-block" id="btnLaunchBeacon" style="margin-top: 18px;" disabled>
+        ⚡ Launch Rotating QR Beacon
+      </button>
+    </section>
+
+    <!-- 2. Active Host Profile Banner -->
+    <section class="host-profile-card is-hidden" id="hostProfileCard">
+      <div class="host-avatar" id="hostAvatarIcon">👤</div>
+      <div class="host-details">
+        <div class="host-name" id="hostDisplayName">Staff Host Name</div>
+        <div class="host-meta">
+          <span id="hostCodeBadge">STF-1001</span> &bull;
+          <span id="hostEventName">Event Name</span>
+        </div>
+      </div>
+      <div class="host-station-badge" id="hostStationBadge">Station #1</div>
+    </section>
+
+    <!-- 3. Metrics Ribbon -->
+    <section class="host-metrics-bar is-hidden" id="hostMetricsBar">
+      <div class="host-metric-box">
+        <div class="host-metric-val" id="beaconAttendeeCount">0</div>
+        <div class="host-metric-lbl">Scanned via this Beacon</div>
+      </div>
+      <div class="host-metric-box">
+        <div class="host-metric-val" id="beaconWindowInterval">20s</div>
+        <div class="host-metric-lbl">Rotation Interval</div>
+      </div>
+    </section>
+
+    <!-- 4. Rotating Dynamic QR Stage (Host Beacon) -->
+    <section class="qr-stage-card is-hidden" id="qrStageCard">
+      <div class="qr-stage-header">
+        <div class="qr-instruction-title">Scan to Mark Attendance</div>
+        <div class="qr-instruction-sub">Point phone camera to verify attendance</div>
+      </div>
+
+      <div class="qr-canvas-wrapper">
+        <canvas id="rotatingQrCanvas"></canvas>
+      </div>
+
+      <!-- Circular Countdown Timer -->
+      <div class="qr-timer-bar">
+        <div class="timer-circle-wrap">
+          <svg class="timer-svg" viewBox="0 0 44 44">
+            <circle class="timer-bg-circle" cx="22" cy="22" r="18"></circle>
+            <circle class="timer-progress-circle" id="timerProgressCircle" cx="22" cy="22" r="18"></circle>
+          </svg>
+          <div class="timer-seconds-text" id="timerSecondsText">20s</div>
+        </div>
+        <div class="timer-label-box">
+          <div class="timer-label-title">Auto-Rotating Security Code</div>
+          <div class="timer-label-sub" id="timerSubText">Refreshes in 20 seconds</div>
+        </div>
+      </div>
+
+      <div class="qr-security-badge">
+        <span>🛡️ Anti-Screenshot Guard &bull; Single-Use Window &bull; Strict 50m GPS</span>
+      </div>
+    </section>
+
+    <!-- 5. Host Self-Attendance Card -->
+    <section class="host-self-card is-hidden" id="hostSelfCard">
+      <!-- Unmarked State -->
+      <div id="hostSelfUnmarked">
+        <div class="host-self-header">
+          <span class="host-self-icon">⭐</span>
+          <div>
+            <div class="host-self-title">Record Your Own Attendance</div>
+            <div style="font-size:0.75rem;color:#38bdf8;">Authorized Host Check-In</div>
+          </div>
+        </div>
+        <p class="host-self-desc">
+          As the authorized staff member displaying this QR beacon, mark your own verified attendance record for this session.
+        </p>
+        <button type="button" class="btn-host-self-checkin" id="btnHostSelfCheckin">
+          <span class="spinner spinner-hidden" id="hostSelfSpinner"></span>
+          <span>✓ Mark My Own Attendance as Host</span>
+        </button>
+      </div>
+
+      <!-- Already Marked State -->
+      <div id="hostSelfMarked" class="is-hidden">
+        <div class="host-already-verified">
+          <div class="host-verified-icon">✓</div>
+          <div>
+            <div style="font-weight:700;color:#ffffff;">Host Attendance Verified!</div>
+            <div id="hostVerifiedTimestamp" style="font-size:0.75rem;color:#a7f3d0;">Recorded at - &bull; Geofence Verified</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. Change Host / Re-select option -->
+    <div style="text-align: center; margin-top: 4px;" class="is-hidden" id="hostSwitchWrap">
+      <button type="button" class="btn btn-ghost btn-sm" id="btnSwitchHost" style="color: #94a3b8;">
+        ↺ Change Host / Station
+      </button>
+      &nbsp;&bull;&nbsp;
+      <a href="/admin.html" class="btn btn-ghost btn-sm" style="color: #94a3b8;">
+        💻 Admin Portal
+      </a>
+    </div>
+
+    <div class="host-footer-note">
+      Quick Access AttendPro &bull; Enterprise Cryptographic Rotating QR Engine
+    </div>
+  </main>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Controller Script -->
+  <script type="module" src="/js/host.js"></script>
+</body>
+</html>

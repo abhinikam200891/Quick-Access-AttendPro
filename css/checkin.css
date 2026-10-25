@@ -1,0 +1,1019 @@
+/* ==========================================================================
+   USER PORTAL SPECIFIC STYLING (Multi-Resolution Desktop & Mobile Responsive)
+   Laptop / Computer: 1920x1080, 1440x900, 1366x768, 1280x800
+   Tablet: 768px - 1024px
+   Mobile: 320px - 767px
+   ========================================================================== */
+
+.mobile-viewport {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #0b0f19 0%, #15162c 35%, #0b0f19 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 16px 14px 40px;
+  position: relative;
+  overflow-x: hidden;
+  width: 100%;
+}
+
+/* ==========================================================================
+   Top Header Navigation Bar (Desktop / Laptop View)
+   ========================================================================== */
+.checkin-topbar {
+  width: 100%;
+  max-width: 1040px;
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: rgba(15, 23, 42, 0.7);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-lg);
+  color: #ffffff;
+  animation: fadeInDown 0.3s ease-out;
+}
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.checkin-topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-title-text {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 1rem;
+  color: #ffffff;
+}
+
+.brand-badge-pill {
+  font-size: 0.6875rem;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(79, 70, 229, 0.3);
+  color: #a5b4fc;
+  border: 1px solid rgba(129, 140, 248, 0.3);
+  margin-left: 6px;
+  font-weight: 600;
+}
+
+.checkin-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.view-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #e2e8f0;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.view-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.topbar-admin-link {
+  font-size: 0.8125rem;
+  color: #94a3b8;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: color var(--transition-fast);
+}
+
+.topbar-admin-link:hover {
+  color: #ffffff;
+}
+
+/* ==========================================================================
+   Main Check-in Card (Responsive Adaptor)
+   ========================================================================== */
+.mobile-card {
+  width: 100%;
+  max-width: 1040px;
+  background: rgba(255, 255, 255, 0.98);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  animation: fadeInScale 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transition: max-width 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Forced Phone Simulator View (Triggered on Desktop via toggle button) */
+.mobile-viewport.force-mobile-view .mobile-card {
+  max-width: 420px !important;
+  border: 10px solid #1e293b !important;
+  border-radius: 40px !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 0 2px #334155 !important;
+  margin: 16px auto !important;
+}
+
+.mobile-viewport.force-mobile-view #checkinFormContainer {
+  display: block !important;
+}
+
+.mobile-viewport.force-mobile-view .portal-header {
+  border-right: none !important;
+}
+
+.mobile-viewport.force-mobile-view .portal-sidebar-notes {
+  display: none !important;
+}
+
+.mobile-viewport.force-mobile-view .form-row-2col {
+  grid-template-columns: 1fr !important;
+  gap: 0 !important;
+}
+
+.mobile-viewport.force-mobile-view .pass-ticket {
+  display: block !important;
+}
+
+.mobile-viewport.force-mobile-view .ticket-divider {
+  display: block !important;
+}
+
+/* ==========================================================================
+   Desktop Grid Layout for Form Container
+   ========================================================================== */
+#checkinFormContainer {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  width: 100%;
+}
+
+/* Header Event Banner / Left Sidebar */
+.portal-header {
+  background: linear-gradient(145deg, #1e1b4b 0%, #312e81 60%, #4338ca 100%);
+  color: #fff;
+  padding: 36px 30px;
+  position: relative;
+  overflow: hidden;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.portal-header::after {
+  content: '';
+  position: absolute;
+  top: -40px;
+  right: -40px;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.4) 0%, rgba(6, 182, 212, 0) 70%);
+  pointer-events: none;
+}
+
+/* Company Brand Header (Company Logo and Name at Top of Attendance Screen) */
+.company-brand-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.company-logo {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.12);
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  flex-shrink: 0;
+  transition: transform var(--transition-fast);
+}
+
+.company-logo:hover {
+  transform: scale(1.06);
+}
+
+.company-brand-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.company-name {
+  font-family: var(--font-heading);
+  font-size: 1.1875rem;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1.2;
+  letter-spacing: -0.3px;
+}
+
+.company-tagline {
+  font-size: 0.75rem;
+  color: #a5b4fc;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 3px;
+}
+
+/* Event Info Section (Directly Below Company Logo & Name) */
+.event-info-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.event-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #c7d2fe;
+  margin-bottom: 14px;
+  align-self: flex-start;
+}
+
+.event-display-name {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1.25;
+  margin-bottom: 18px;
+  letter-spacing: -0.5px;
+}
+
+.event-details-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  background: rgba(15, 23, 42, 0.4);
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
+  margin-bottom: 24px;
+}
+
+.event-detail-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #e2e8f0;
+}
+
+.event-detail-item svg {
+  color: #38bdf8;
+  flex-shrink: 0;
+}
+
+/* Sidebar Informational Badges (Desktop View) */
+.portal-sidebar-notes {
+  margin-top: auto;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.portal-note-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.portal-note-icon {
+  font-size: 1.125rem;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.portal-note-text strong {
+  display: block;
+  font-size: 0.8125rem;
+  color: #f1f5f9;
+  font-weight: 600;
+}
+
+.portal-note-text span {
+  display: block;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  line-height: 1.35;
+}
+
+/* ==========================================================================
+   Form Body
+   ========================================================================== */
+.portal-body {
+  padding: 36px 36px 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* Role Segmented Controller */
+.role-segmented-control {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  background: var(--bg-subtle);
+  padding: 4px;
+  border-radius: var(--radius-lg);
+  margin-bottom: 20px;
+}
+
+.role-option-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-heading);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  touch-action: manipulation;
+}
+
+.role-option-btn.active {
+  background: #ffffff;
+  color: var(--primary);
+  box-shadow: var(--shadow-sm);
+}
+
+/* GPS Radar / Location Status Box */
+.gps-status-card {
+  background: #f8fafc;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.gps-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.radar-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.radar-dot.verified {
+  background: var(--accent-emerald);
+  box-shadow: 0 0 10px var(--accent-emerald);
+}
+
+.radar-dot.warning {
+  background: var(--accent-amber);
+  box-shadow: 0 0 10px var(--accent-amber);
+}
+
+.radar-dot.error {
+  background: var(--accent-rose);
+  box-shadow: 0 0 10px var(--accent-rose);
+}
+
+.radar-dot.pulsing::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  animation: radarPulse 1.6s ease-out infinite;
+}
+
+@keyframes radarPulse {
+  0% { transform: scale(0.6); opacity: 1; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+.gps-text-title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.gps-text-sub {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+/* Submit Action Button */
+.submit-btn-wrapper {
+  margin-top: 24px;
+}
+
+.btn-checkin-submit {
+  width: 100%;
+  padding: 16px;
+  min-height: 52px;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(79, 70, 229, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: all var(--transition-fast);
+  touch-action: manipulation;
+}
+
+.btn-checkin-submit:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px rgba(79, 70, 229, 0.45);
+}
+
+.btn-checkin-submit:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ==========================================================================
+   DIGITAL ATTENDANCE PASS (Multi-Resolution Boarding Pass)
+   ========================================================================== */
+.pass-ticket-wrapper {
+  padding: 24px;
+  max-width: 860px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.pass-ticket {
+  background: #ffffff;
+  border-radius: 24px;
+  border: 1px solid #e2e8f0;
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+  position: relative;
+  display: grid;
+  grid-template-columns: 320px 1fr;
+}
+
+.pass-top {
+  background: linear-gradient(145deg, #059669 0%, #047857 100%);
+  color: #ffffff;
+  padding: 36px 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.verified-icon-circle {
+  width: 68px;
+  height: 68px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  animation: bouncePop 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes bouncePop {
+  0% { transform: scale(0.5); opacity: 0; }
+  70% { transform: scale(1.15); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.pass-top h2 {
+  font-size: 1.5rem;
+  color: #fff;
+  margin-bottom: 6px;
+  line-height: 1.2;
+}
+
+.pass-top p {
+  font-size: 0.8125rem;
+  color: #d1fae5;
+  font-weight: 500;
+}
+
+/* Ticket Divider */
+.ticket-divider {
+  display: none;
+  position: relative;
+  height: 24px;
+  background: #ffffff;
+}
+
+.ticket-divider::before,
+.ticket-divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  background-color: #0b0f19;
+  border-radius: 50%;
+}
+
+.ticket-divider::before { left: -10px; }
+.ticket-divider::after { right: -10px; }
+
+.ticket-divider-line {
+  position: absolute;
+  top: 50%;
+  left: 20px;
+  right: 20px;
+  border-top: 2px dashed #cbd5e1;
+}
+
+.pass-body {
+  padding: 28px 32px 32px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.pass-data-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.pass-field strong {
+  display: block;
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px;
+}
+
+.pass-field span {
+  font-size: 0.9375rem;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.pass-barcode-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-md);
+  padding: 12px;
+  text-align: center;
+  margin-top: 10px;
+}
+
+.barcode-ref {
+  font-family: monospace;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  letter-spacing: 1px;
+}
+
+.pass-actions-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.pass-actions-row .btn {
+  flex: 1;
+}
+
+/* Security footer badge */
+.security-footer {
+  text-align: center;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* ==========================================================================
+   RESPONSIVE ADJUSTMENTS FOR LAPTOPS, TABLETS & MOBILE PHONES
+   ========================================================================== */
+
+/* Laptops / Tablets (< 900px) */
+@media (max-width: 899px) {
+  .checkin-topbar {
+    max-width: 480px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+  }
+
+  .brand-badge-pill {
+    display: none;
+  }
+
+  .view-toggle-btn {
+    display: none; /* Hide device simulator button on real mobile/tablet */
+  }
+
+  .mobile-card {
+    max-width: 480px;
+    border-radius: var(--radius-xl);
+  }
+
+  #checkinFormContainer {
+    grid-template-columns: 1fr;
+    display: block;
+  }
+
+  .portal-header {
+    border-right: none;
+    padding: 24px 20px;
+  }
+
+  .company-brand-header {
+    gap: 12px;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+  }
+
+  .company-logo {
+    width: 44px;
+    height: 44px;
+  }
+
+  .company-name {
+    font-size: 1.0625rem;
+  }
+
+  .company-tagline {
+    font-size: 0.6875rem;
+  }
+
+  .portal-header .event-display-name {
+    font-size: 1.25rem;
+  }
+
+  .portal-sidebar-notes {
+    display: none;
+  }
+
+  .portal-body {
+    padding: 20px 16px 28px;
+  }
+
+  /* Form row 2 columns collapse to 1 column */
+  .form-row-2col {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  /* Digital Pass on mobile (< 900px) */
+  .pass-ticket-wrapper {
+    padding: 16px 12px;
+  }
+
+  .pass-ticket {
+    grid-template-columns: 1fr;
+    display: block;
+    border-radius: 20px;
+  }
+
+  .pass-top {
+    padding: 24px 20px;
+  }
+
+  .ticket-divider {
+    display: block;
+  }
+
+  .pass-body {
+    padding: 16px 20px 24px;
+  }
+
+  .pass-data-grid {
+    gap: 12px;
+  }
+
+  .pass-actions-row {
+    flex-direction: column-reverse;
+  }
+}
+
+/* Phones (< 480px) */
+@media (max-width: 479px) {
+  .mobile-viewport {
+    padding: 8px 8px 30px;
+  }
+
+  .checkin-topbar {
+    border-radius: var(--radius-md);
+  }
+
+  .mobile-card {
+    border-radius: var(--radius-lg);
+  }
+
+  .portal-header {
+    padding: 20px 14px;
+  }
+
+  .portal-body {
+    padding: 16px 12px 24px;
+  }
+
+  .role-option-btn {
+    padding: 10px;
+    font-size: 0.875rem;
+  }
+
+  .btn-checkin-submit {
+    font-size: 1rem;
+    padding: 14px;
+  }
+}
+
+/* ==========================================================================
+   PRINT STYLES FOR DIGITAL PASS TICKET
+   ========================================================================== */
+@media print {
+  body.mobile-viewport {
+    background: #ffffff !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+  }
+
+  .checkin-topbar,
+  .pass-actions-row,
+  .security-footer,
+  #btnToggleDeviceView,
+  .view-toggle-btn {
+    display: none !important;
+  }
+
+  .mobile-card {
+    box-shadow: none !important;
+    border: none !important;
+    max-width: 100% !important;
+    background: #ffffff !important;
+  }
+
+  .pass-ticket-wrapper {
+    padding: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .pass-ticket {
+    border: 2px solid #0f172a !important;
+    box-shadow: none !important;
+  }
+}
+
+/* Utility classes replacing inline styles */
+.loading-box {
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.loading-spinner {
+  width: 36px;
+  height: 36px;
+  border-width: 3px;
+  margin-bottom: 16px;
+}
+
+.loading-title {
+  font-weight: 700;
+  font-size: 1.125rem;
+  color: var(--text-primary);
+}
+
+.loading-subtitle {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.error-banner-card {
+  padding: 32px 24px;
+  text-align: center;
+}
+
+.error-banner-icon {
+  width: 60px;
+  height: 60px;
+  background: var(--accent-rose-light);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  margin: 0 auto 16px;
+  color: var(--accent-rose);
+}
+
+.error-banner-title {
+  font-size: 1.25rem;
+  margin-bottom: 8px;
+  color: #9f1239;
+}
+
+.error-banner-desc {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+
+.venue-text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.form-group-mb16 {
+  margin-bottom: 16px;
+}
+
+.form-helper-note {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.btn-refresh-gps {
+  padding: 4px 8px;
+  font-size: 0.75rem;
+}
+
+.spinner-hidden {
+  display: none;
+}
+
+.pass-field-full {
+  grid-column: 1 / -1;
+}
+
+.pass-field-venue {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: normal;
+}
+
+.pass-timestamp-text {
+  font-size: 0.8125rem;
+}
+
+.pass-distance-text {
+  font-size: 0.8125rem;
+  color: var(--accent-emerald);
+}
+
+.barcode-ref-label {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.pass-code-mono {
+  font-family: monospace;
+}
+
+.rejection-card {
+  max-width: 400px;
+  text-align: center;
+}
+
+.rejection-card-body {
+  padding: 32px 24px;
+}
+
+.rejection-card-icon {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: var(--accent-rose-light);
+  color: var(--accent-rose);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.75rem;
+  margin: 0 auto 16px;
+}
+
+.rejection-card-title {
+  font-size: 1.25rem;
+  color: #9f1239;
+  margin-bottom: 8px;
+}
+
+.rejection-card-msg {
+  font-size: 0.9375rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+
+.is-hidden {
+  display: none;
+}
+
+/* Scanned Dynamic Host Beacon Banner */
+.scanned-beacon-badge {
+  margin-top: 14px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+}
+
+.beacon-pulse-dot {
+  width: 9px;
+  height: 9px;
+  background: #10b981;
+  border-radius: 50%;
+  box-shadow: 0 0 8px #10b981;
+  animation: pulseDot 1.8s infinite;
+  flex-shrink: 0;
+}
+
+.beacon-badge-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #065f46;
+}
+
+.beacon-badge-sub {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #047857;
+}
