@@ -1376,7 +1376,21 @@ export const dbService = {
             device_id: h.device_id,
             device_registered_at: h.device_registered_at
           }));
-          const { error: insError } = await supabase.from('event_authorized_hosts').insert(insertPayload);
+          let { error: insError } = await supabase.from('event_authorized_hosts').insert(insertPayload);
+
+          // Graceful fallback if device_id column has not been added to Supabase yet
+          if (insError && (insError.message?.includes('device_id') || insError.details?.includes('device_id') || insError.code === 'PGRST204')) {
+            console.warn('device_id column not detected in Supabase event_authorized_hosts. Retrying without device columns...');
+            const fallbackPayload = newHosts.map((h) => ({
+              event_id: h.event_id,
+              member_id: h.member_id,
+              station_name: h.station_name,
+              is_active: h.is_active
+            }));
+            const retryRes = await supabase.from('event_authorized_hosts').insert(fallbackPayload);
+            insError = retryRes.error;
+          }
+
           if (insError) {
             console.error('Supabase authorizeEventHosts insert error:', insError);
             throw new Error(insError.message || 'Failed to save hosts in Supabase');
