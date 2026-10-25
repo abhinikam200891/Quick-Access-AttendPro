@@ -350,11 +350,10 @@ async function openHostsModal(eventId) {
     const ft = filterText.toLowerCase().trim();
     const filteredStaff = staffMembers.filter((m) => {
       if (!ft) return true;
-      return (
-        m.full_name.toLowerCase().includes(ft) ||
-        m.member_code.toLowerCase().includes(ft) ||
-        (m.division_name && m.division_name.toLowerCase().includes(ft))
-      );
+      const matchName = m.full_name && m.full_name.toLowerCase().includes(ft);
+      const matchCode = m.member_code && String(m.member_code).toLowerCase().includes(ft);
+      const matchDiv = m.division_name && m.division_name.toLowerCase().includes(ft);
+      return Boolean(matchName || matchCode || matchDiv);
     });
 
     tbody.innerHTML = filteredStaff
@@ -461,10 +460,14 @@ async function openHostsModal(eventId) {
           const checkbox = row.querySelector('.host-auth-checkbox');
           if (checkbox && checkbox.checked) {
             const memberId = row.dataset.memberId;
+            const memberCode = row.dataset.memberCode || '';
+            const fullName = row.dataset.memberName || '';
             const stationInput = row.querySelector('.host-station-input');
             const stationName = stationInput ? stationInput.value.trim() : 'Staff Station';
             hostConfigs.push({
               memberId,
+              memberCode,
+              fullName,
               stationName,
               isActive: true
             });

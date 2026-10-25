@@ -1221,43 +1221,63 @@ export const dbService = {
   },
 
   async getAuthorizedHostByCode(eventId, hostCode) {
+    if (!hostCode) return null;
     const hosts = await this.getEventAuthorizedHosts(eventId);
-    return hosts.find((h) => h.member_code.toUpperCase() === String(hostCode).trim().toUpperCase() && h.is_active) || null;
+    const codeStr = String(hostCode).trim().toUpperCase();
+    return hosts.find((h) => h.member_code && String(h.member_code).trim().toUpperCase() === codeStr && h.is_active) || null;
   },
 
   async authorizeEventHosts(eventId, hostSelections) {
     const supabase = getSupabaseClient();
-    const existing = mockDb.get('event_hosts');
+    const existing = mockDb.get('event_hosts') || [];
     const otherEvents = existing.filter((h) => h.event_id !== eventId);
+    const members = await this.getMembers();
+    const memberMap = new Map(members.map((m) => [m.id, m]));
 
-    const newHosts = hostSelections.map((sel, idx) => ({
-      id: sel.id || `eh-${Date.now()}-${idx}`,
-      event_id: eventId,
-      member_id: sel.memberId,
-      member_code: sel.memberCode,
-      full_name: sel.fullName,
-      station_name: sel.stationName || `Beacon Station #${idx + 1}`,
-      host_secret: sel.hostSecret || `sec_${sel.memberCode.toLowerCase()}_${Date.now().toString(36)}`,
-      is_active: sel.isActive !== undefined ? sel.isActive : true,
-      created_at: new Date().toISOString()
-    }));
+    const newHosts = hostSelections.map((sel, idx) => {
+      const member = memberMap.get(sel.memberId);
+      const code = sel.memberCode || member?.member_code || `STF-${idx + 1}`;
+      const name = sel.fullName || member?.full_name || 'Staff Member';
+      const cleanCode = String(code).toLowerCase().replace(/[^a-z0-9]/g, '');
+
+      return {
+        id: sel.id || crypto.randomUUID(),
+        event_id: eventId,
+        member_id: sel.memberId,
+        member_code: code,
+        full_name: name,
+        station_name: sel.stationName || `Beacon Station #${idx + 1}`,
+        host_secret: sel.hostSecret || `sec_${cleanCode || 'host'}_${Date.now().toString(36)}`,
+        is_active: sel.isActive !== undefined ? sel.isActive : true,
+        created_at: new Date().toISOString()
+      };
+    });
 
     mockDb.save('event_hosts', [...otherEvents, ...newHosts]);
 
     if (supabase) {
       try {
-        await supabase.from('event_authorized_hosts').delete().eq('event_id', eventId);
-        await supabase.from('event_authorized_hosts').insert(
-          newHosts.map((h) => ({
+        const { error: delError } = await supabase.from('event_authorized_hosts').delete().eq('event_id', eventId);
+        if (delError) console.warn('Supabase delete event_authorized_hosts warning:', delError);
+
+        if (newHosts.length > 0) {
+          const insertPayload = newHosts.map((h) => ({
             event_id: h.event_id,
             member_id: h.member_id,
             station_name: h.station_name,
-            host_secret: h.host_secret,
             is_active: h.is_active
-          }))
-        );
+          }));
+          const { error: insError } = await supabase.from('event_authorized_hosts').insert(insertPayload);
+          if (insError) {
+            console.error('Supabase authorizeEventHosts insert error:', insError);
+            throw new Error(insError.message || 'Failed to save hosts in Supabase');
+          }
+        }
       } catch (e) {
-        console.warn('Supabase authorizeEventHosts error:', e);
+        console.error('Supabase authorizeEventHosts error:', e);
+        if (this.isUsingSupabase()) {
+          throw e;
+        }
       }
     }
 
