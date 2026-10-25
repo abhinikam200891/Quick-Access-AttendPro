@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Quick Access AttendPro | Enterprise Web Application</title>
+  <title>Quick Access AttendPro | Enterprise QR Attendance Platform</title>
   <meta name="description" content="Secure, mobile-friendly QR code attendance management web application powered by HTML/CSS/JS and Supabase." />
   <link rel="icon" type="image/png" href="/assets/logo.png" />
   <link rel="apple-touch-icon" href="/assets/icon-192.png" />
@@ -14,23 +14,28 @@
   <meta name="apple-mobile-web-app-title" content="QA AttendPro" />
   <link rel="stylesheet" href="/css/common.css" />
   <style>
+    body {
+      background: #f8fafc;
+      color: #0f172a;
+    }
     .index-navbar {
-      max-width: 1260px;
+      max-width: 900px;
       margin: 0 auto;
-      padding: 10px 20px 0;
+      padding: 14px 20px 0;
       display: flex;
       align-items: center;
       justify-content: flex-end;
+      gap: 12px;
     }
     .hero-container {
-      max-width: 1260px;
+      max-width: 900px;
       margin: 0 auto;
-      padding: 8px 16px clamp(32px, 6vw, 60px);
+      padding: 12px 20px clamp(32px, 6vw, 60px);
     }
     .hero-header {
       text-align: center;
       margin-top: 0;
-      margin-bottom: clamp(20px, 4vw, 36px);
+      margin-bottom: clamp(24px, 4vw, 36px);
     }
     .hero-title {
       font-size: clamp(2rem, 5.5vw, 2.75rem);
@@ -63,53 +68,40 @@
     .hero-lead {
       font-size: clamp(0.9375rem, 2.5vw, 1.125rem);
       color: #475569;
-      max-width: 760px;
+      max-width: 680px;
       margin: 0 auto;
       line-height: 1.6;
     }
-    .portals-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-      gap: clamp(16px, 2.5vw, 24px);
-      margin-bottom: clamp(28px, 5vw, 40px);
+    .admin-main-wrap {
+      max-width: 680px;
+      margin: 0 auto clamp(24px, 4vw, 32px);
     }
     .portal-launch-card {
-      background: var(--bg-surface);
-      border: 2px solid var(--border-subtle);
+      background: #ffffff;
+      border: 1px solid rgba(226, 232, 240, 0.85);
+      border-top: 6px solid var(--primary);
       border-radius: var(--radius-xl);
-      padding: clamp(22px, 3vw, 32px) clamp(18px, 2.5vw, 26px);
-      box-shadow: var(--shadow-lg);
+      padding: clamp(26px, 4vw, 36px) clamp(22px, 3.5vw, 32px);
+      box-shadow: 0 10px 30px -8px rgba(15, 23, 42, 0.08), 0 4px 12px -2px rgba(15, 23, 42, 0.04);
       transition: all var(--transition-fast);
       display: flex;
       flex-direction: column;
       justify-content: space-between;
       position: relative;
-      overflow: hidden;
     }
     .portal-launch-card:hover {
-      transform: translateY(-4px);
-      box-shadow: var(--shadow-xl);
-    }
-    .portal-launch-card.admin,
-    .portal-launch-card.user {
-      border-top: 6px solid var(--primary);
-    }
-    .portal-launch-card.admin:hover,
-    .portal-launch-card.user:hover {
-      border-color: var(--primary);
+      box-shadow: 0 16px 40px -10px rgba(79, 70, 229, 0.15), 0 6px 16px -3px rgba(15, 23, 42, 0.06);
+      transform: translateY(-2px);
     }
     .card-icon {
-      width: 54px;
-      height: 54px;
-      border-radius: var(--radius-lg);
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.65rem;
-      margin-bottom: 18px;
-    }
-    .card-icon.admin-icon,
-    .card-icon.user-icon {
+      font-size: 1.75rem;
+      margin-bottom: 20px;
       background: var(--primary-light);
       color: var(--primary);
     }
@@ -117,107 +109,118 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
-      margin-bottom: 8px;
+      gap: 12px;
+      margin-bottom: 10px;
     }
     .card-header-flex .card-title {
       margin-bottom: 0;
-    }
-    .hero-scanner-callout {
-      background: #ffffff;
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-xl);
-      padding: clamp(16px, 2.5vw, 22px) clamp(20px, 3vw, 28px);
-      box-shadow: var(--shadow-md);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 20px;
-      flex-wrap: wrap;
-    }
-    .scanner-callout-info {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .scanner-callout-badge {
-      display: inline-flex;
-      align-items: center;
-      align-self: flex-start;
-      gap: 4px;
-      font-size: 0.6875rem;
+      font-size: clamp(1.35rem, 3.5vw, 1.65rem);
       font-weight: 800;
-      letter-spacing: 0.5px;
-      padding: 2px 8px;
-      border-radius: var(--radius-full);
-      background: rgba(79, 70, 229, 0.1);
-      color: var(--primary);
-    }
-    .scanner-callout-title {
-      font-weight: 700;
-      font-size: 1.0625rem;
       color: #0f172a;
     }
-    .scanner-callout-sub {
-      font-size: 0.875rem;
-      color: #64748b;
-    }
-    /* Keep button white text bright and visible on hover */
-    .btn-primary,
-    .btn-primary:hover,
-    .btn-primary:focus,
-    .btn-primary:active,
-    a.btn-primary,
-    a.btn-primary:hover,
-    a.btn-primary:focus,
-    a.btn-primary:active {
-      color: #ffffff !important;
-    }
-    .btn-primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 20px var(--primary-glow);
-    }
-    .card-title {
-      font-size: clamp(1.25rem, 3.5vw, 1.5rem);
-      font-weight: 700;
-      margin-bottom: 8px;
-    }
     .card-description {
-      font-size: 0.9375rem;
+      font-size: 1rem;
       color: #475569;
       margin-bottom: 24px;
-      line-height: 1.5;
+      line-height: 1.6;
     }
     .card-features-list {
       list-style: none;
-      margin-bottom: 30px;
-      font-size: 0.875rem;
+      padding: 0;
+      margin: 0 0 32px 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px 18px;
+      font-size: 0.9rem;
       color: #334155;
     }
     .card-features-list li {
       display: flex;
       align-items: center;
       gap: 10px;
-      margin-bottom: 10px;
     }
     .card-features-list li span.chk {
       color: var(--accent-emerald);
-      font-weight: bold;
+      font-weight: 800;
+      font-size: 1rem;
     }
-
+    .btn-lg {
+      padding: 14px 28px;
+      font-size: 1.05rem;
+      font-weight: 700;
+      border-radius: var(--radius-md);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      transition: all var(--transition-fast);
+      cursor: pointer;
+    }
+    .btn-block {
+      width: 100%;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+      color: #ffffff !important;
+      border: none;
+      box-shadow: 0 4px 14px var(--primary-glow);
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px var(--primary-glow);
+    }
+    .hero-scanner-callout {
+      background: #ffffff;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-xl);
+      padding: clamp(18px, 3vw, 24px) clamp(20px, 3.5vw, 28px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      box-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.04);
+      max-width: 680px;
+      margin: 0 auto;
+    }
+    .scanner-callout-info {
+      flex: 1;
+    }
+    .scanner-callout-badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: var(--primary);
+      background: var(--primary-light);
+      padding: 3px 8px;
+      border-radius: 6px;
+      margin-bottom: 6px;
+    }
+    .scanner-callout-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 4px;
+    }
+    .scanner-callout-sub {
+      font-size: 0.85rem;
+      color: #64748b;
+      line-height: 1.45;
+    }
     @media (max-width: 640px) {
-      .index-navbar {
-        padding: 12px 14px 0;
-        justify-content: flex-end;
+      .hero-scanner-callout {
+        flex-direction: column;
+        align-items: stretch;
+        text-align: left;
       }
-      .portal-launch-card {
-        padding: 22px 18px;
+      .card-features-list {
+        grid-template-columns: 1fr;
       }
     }
   </style>
 </head>
 <body>
-  <!-- Top Bar: Install App Option Only -->
+  <!-- Top Bar: Quick Actions -->
   <header class="index-navbar">
     <button type="button" class="btn btn-secondary btn-sm btn-install-app" id="btnInstallApp" title="Install as standalone desktop app">
       💻 <span class="btn-text">Install App</span>
@@ -231,54 +234,29 @@
         <span>Quick Access <span class="highlight">AttendPro</span></span>
       </h1>
       <p class="hero-lead">
-        Enterprise-grade, mobile-friendly attendance platform. Attendees scan the event QR code with their mobile phone camera and mark attendance instantly in their mobile browser—no native app required.
+        Enterprise QR Attendance Platform with real-time live check-ins, authorized mobile beacons, and GPS geofence validation.
       </p>
     </header>
 
-    <div class="portals-grid">
-      <!-- 1. User Portal (Mobile) -->
-      <div class="portal-launch-card user">
-        <div>
-          <div class="card-icon user-icon">📱</div>
-          <div class="card-header-flex">
-            <h2 class="card-title">User Portal (Mobile)</h2>
-            <span class="badge badge-neutral" style="font-size: 0.6875rem;">Attendee</span>
-          </div>
-          <p class="card-description">
-            Zero-install browser experience for staff and agents arriving at the event venue.
-          </p>
-          <ul class="card-features-list">
-            <li><span class="chk">✓</span> Opens directly from phone camera QR scan</li>
-            <li><span class="chk">✓</span> Role selection: Staff or Agent</li>
-            <li><span class="chk">✓</span> Dynamic cascading Division &rarr; Branch picker</li>
-            <li><span class="chk">✓</span> Live Leaflet GPS radar mini-map &amp; 50m geofence</li>
-            <li><span class="chk">✓</span> Atomic duplicate submission blocking</li>
-            <li><span class="chk">✓</span> Official digital verified attendance pass</li>
-          </ul>
-        </div>
-        <a href="/checkin.html" class="btn btn-primary btn-lg btn-block" id="btnLaunchUser">
-          Launch User Portal &rarr;
-        </a>
-      </div>
-
-      <!-- 2. Admin Portal -->
+    <!-- Main Card: Admin Management Portal -->
+    <div class="admin-main-wrap">
       <div class="portal-launch-card admin">
         <div>
-          <div class="card-icon admin-icon">💻</div>
+          <div class="card-icon">💻</div>
           <div class="card-header-flex">
             <h2 class="card-title">Admin Portal</h2>
-            <span class="badge badge-neutral" style="font-size: 0.6875rem;">Management</span>
+            <span class="badge badge-primary" style="font-size: 0.75rem; padding: 4px 10px;">Management Console</span>
           </div>
           <p class="card-description">
-            Laptop &amp; desktop dashboard for event organizers, HR, and branch administrators.
+            Complete management dashboard for event organizers, HR leaders, and branch administrators.
           </p>
           <ul class="card-features-list">
-            <li><span class="chk">✓</span> Event schedule, venue &amp; check-in time windows</li>
-            <li><span class="chk">✓</span> Interactive Leaflet geofence map coordinate picker</li>
-            <li><span class="chk">✓</span> Manage 20+ authorized mobile staff beacon hosts</li>
-            <li><span class="chk">✓</span> Live realtime attendance feed &amp; visual charts</li>
-            <li><span class="chk">✓</span> Excel/CSV export &amp; security audit logs</li>
-            <li><span class="chk">✓</span> User Master record management (Staff &amp; Agents)</li>
+            <li><span class="chk">✓</span> Live Realtime Attendance Feed &amp; Chime</li>
+            <li><span class="chk">✓</span> Event Schedule &amp; Time Window Controls</li>
+            <li><span class="chk">✓</span> Interactive Leaflet Geofence Map Picker</li>
+            <li><span class="chk">✓</span> Authorized Staff Mobile Beacon Beacons</li>
+            <li><span class="chk">✓</span> Instant Excel / CSV Reports Export</li>
+            <li><span class="chk">✓</span> Master User Management (1,080+ Staff &amp; Agents)</li>
           </ul>
         </div>
         <a href="/admin.html" class="btn btn-primary btn-lg btn-block" id="btnLaunchAdmin">
@@ -290,12 +268,12 @@
     <!-- Quick In-App Camera Scanner Callout -->
     <div class="hero-scanner-callout">
       <div class="scanner-callout-info">
-        <span class="scanner-callout-badge">⚡ INSTANT IN-APP CAMERA SCAN</span>
-        <div class="scanner-callout-title">Need to scan an event standee QR or staff mobile beacon?</div>
-        <div class="scanner-callout-sub">Use our built-in camera barcode/QR scanner directly in your browser—no external app download required.</div>
+        <span class="scanner-callout-badge">⚡ ATTENDEE QUICK SCAN</span>
+        <div class="scanner-callout-title">Need to scan an event standee or staff beacon?</div>
+        <div class="scanner-callout-sub">Attendees can scan using their native phone camera, or click here to open the built-in browser scanner.</div>
       </div>
-      <button type="button" class="btn btn-primary btn-lg" id="btnOpenInAppScanner">
-        📷 Open In-App Camera Scanner
+      <button type="button" class="btn btn-secondary btn-lg" id="btnOpenInAppScanner">
+        📷 Open Camera Scanner
       </button>
     </div>
   </div>
@@ -316,13 +294,11 @@
             subtitle: 'Point camera at the printed venue standee or staff mobile screen',
             onScanSuccess: (decodedText) => {
               try {
-                // If scanned text is a URL, navigate to it
                 if (decodedText.startsWith('http://') || decodedText.startsWith('https://') || decodedText.includes('/checkin.html')) {
                   window.location.href = decodedText;
                 } else if (decodedText.includes('token=') || decodedText.includes('event=')) {
                   window.location.href = `/checkin.html?${decodedText.replace(/^\?/, '')}`;
                 } else {
-                  // Fallback: direct to checkin with parameter
                   window.location.href = `/checkin.html?token=${encodeURIComponent(decodedText)}`;
                 }
               } catch (e) {
