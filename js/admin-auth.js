@@ -63,7 +63,11 @@ export async function signInAdmin(email, password) {
       password: password
     });
     if (error) {
-      return { success: false, error: error.message || 'Authentication failed' };
+      let msg = error.message || 'Authentication failed';
+      if (msg.toLowerCase().includes('email not confirmed')) {
+        msg = '⚠️ Email Not Confirmed Yet. In your Supabase Dashboard, go to Authentication → Users, click the three dots (...) next to your email, and select "Auto-confirm user" (or toggle off "Confirm email" in Auth → Providers → Email).';
+      }
+      return { success: false, error: msg };
     }
     return { success: true, user: data.user };
   }
