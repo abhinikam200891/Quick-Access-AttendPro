@@ -1,10 +1,14 @@
 -- ============================================================================
 -- BATCH INSERT SCRIPT: ALL BRANCHES (110) & ALL STAFF MEMBERS (1,085)
 -- Quick Access AttendPro - Supabase PostgreSQL Database
--- Updated: Corrected 'Sangali' -> 'Sangli' and 'URAN' (Code 86) -> 'ULWE'
+-- Features: Includes 'division_name' in branches table for immediate visibility
+--           Corrected 'Sangali' -> 'Sangli' and 'URAN' (Code 86) -> 'ULWE'
 -- ============================================================================
 
 BEGIN;
+
+-- ENSURE division_name COLUMN EXISTS ON branches
+ALTER TABLE branches ADD COLUMN IF NOT EXISTS division_name VARCHAR(255);
 
 -- STEP 1: INSERT ALL 8 DIVISIONS
 INSERT INTO divisions (code, name) VALUES
@@ -18,9 +22,9 @@ INSERT INTO divisions (code, name) VALUES
   ('DIV-THANE', 'Thane')
 ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name;
 
--- STEP 2: INSERT ALL 110 BRANCHES
-INSERT INTO branches (division_id, code, name)
-SELECT d.id, b.code, b.name
+-- STEP 2: INSERT ALL 110 BRANCHES (INCLUDING division_name)
+INSERT INTO branches (division_id, division_name, code, name)
+SELECT d.id, d.name, b.code, b.name
 FROM (VALUES
   ('DIV-MUMBAI-EAST', '2', 'CHUNABHATTI'),
   ('DIV-MUMBAI-EAST', '4', 'BHANDUP'),
@@ -134,7 +138,9 @@ FROM (VALUES
   ('DIV-SANGLI', '103', 'KASABA BAWADA')
 ) AS b(div_code, code, name)
 JOIN divisions d ON d.code = b.div_code
-ON CONFLICT (division_id, code) DO UPDATE SET name = EXCLUDED.name;
+ON CONFLICT (division_id, code) DO UPDATE SET
+  name = EXCLUDED.name,
+  division_name = EXCLUDED.division_name;
 
 -- STEP 3: INSERT ALL 1,085 STAFF MEMBERS
 INSERT INTO members (role, member_code, full_name, phone_number, division_id, branch_id, is_active)
@@ -1245,14 +1251,10 @@ ON CONFLICT (role, member_code) DO UPDATE SET
 COMMIT;
 
 -- ============================================================================
--- VERIFICATION CHECKS (Run to confirm record counts)
+-- VERIFICATION CHECKS (Run to confirm record counts & division names)
 -- ============================================================================
 SELECT count(*) AS total_divisions FROM divisions;
 SELECT count(*) AS total_branches FROM branches;
 SELECT count(*) AS total_staff_members FROM members WHERE role = 'Staff';
-SELECT d.name AS division_name, count(b.id) AS branch_count
-FROM divisions d JOIN branches b ON b.division_id = d.id
-GROUP BY d.name ORDER BY d.name;
-SELECT d.name AS division_name, count(m.id) AS staff_count
-FROM divisions d JOIN members m ON m.division_id = d.id
-GROUP BY d.name ORDER BY d.name;
+-- Preview Branches with Division Name directly visible:
+SELECT code AS branch_code, name AS branch_name, division_name FROM branches ORDER BY division_name, name LIMIT 20;

@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS divisions (
 CREATE TABLE IF NOT EXISTS branches (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     division_id UUID NOT NULL REFERENCES divisions(id) ON DELETE CASCADE,
+    division_name VARCHAR(255),
     code VARCHAR(50) NOT NULL,
     name VARCHAR(255) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now(),
