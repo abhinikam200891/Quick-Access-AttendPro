@@ -814,7 +814,18 @@ export const dbService = {
   async deleteEvent(eventId) {
     const supabase = getSupabaseClient();
     if (supabase) {
-      await supabase.from('events').delete().eq('id', eventId);
+      try {
+        await supabase.from('event_authorized_hosts').delete().eq('event_id', eventId);
+      } catch (e) {}
+      try {
+        await supabase.from('attendance').delete().eq('event_id', eventId);
+      } catch (e) {}
+
+      const { error } = await supabase.from('events').delete().eq('id', eventId);
+      if (error) {
+        console.error('Supabase deleteEvent error:', error);
+        throw new Error(error.message || 'Failed to delete event from database');
+      }
     }
 
     let events = mockDb.get('events');

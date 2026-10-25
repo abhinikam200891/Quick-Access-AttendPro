@@ -338,9 +338,6 @@
             <button type="button" class="btn btn-ghost btn-sm" id="btnToggleSound" title="Toggle audio chime on verified check-in">
               🔔 <span id="soundToggleLabel">Sound: ON</span>
             </button>
-            <button type="button" class="btn btn-primary btn-sm btn-simulate" id="btnSimulateCheckin" title="Simulate an instant verified check-in to test the live stream, chime, and chart animations">
-              ⚡ Test Live Stream
-            </button>
           </div>
         </div>
 
@@ -853,11 +850,40 @@
           </div>
         </div>
 
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary btn-modal-dismiss">Cancel</button>
-          <button type="submit" class="btn btn-primary" id="btnSaveEditedEvent">💾 Save Changes</button>
+        <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
+          <button type="button" class="btn btn-ghost btn-sm" id="btnDeleteFromEditModal" style="color:var(--accent-rose);">
+            🗑️ Delete Event
+          </button>
+          <div style="display:flex; gap:8px;">
+            <button type="button" class="btn btn-secondary btn-modal-dismiss">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="btnSaveEditedEvent">💾 Save Changes</button>
+          </div>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- DELETE EVENT CONFIRMATION MODAL -->
+  <div class="modal-backdrop" id="deleteEventConfirmModal">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-header" style="background: rgba(239, 68, 68, 0.08); border-bottom: 1px solid rgba(239, 68, 68, 0.2);">
+        <h3 class="modal-title" style="color: #b91c1c;">⚠️ Delete Event Confirmation</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 24px;">
+        <p style="font-size: 1.05rem; margin-bottom: 14px; color: var(--text-primary); line-height: 1.5;">
+          Do you really want to delete the event <strong id="deleteEventConfirmName" style="color: var(--primary);"></strong>?
+        </p>
+        <div style="background: #fff1f2; border: 1px solid #fecdd3; border-radius: 8px; padding: 12px 14px; font-size: 0.85rem; color: #9f1239; line-height: 1.5;">
+          <strong>Warning:</strong> All attendance check-in records, assigned staff beacons, and QR codes associated with this event will be permanently removed from Supabase. This action cannot be undone.
+        </div>
+      </div>
+      <div class="modal-footer" style="background: var(--bg-surface-alt); display:flex; justify-content:flex-end; gap:10px;">
+        <button type="button" class="btn btn-secondary btn-modal-dismiss" id="btnCancelDeleteEvent">Cancel</button>
+        <button type="button" class="btn btn-danger" id="btnConfirmDeleteEvent" style="background: #dc2626; color: white; border: none; font-weight: 600;">
+          🗑️ Yes, Delete Event
+        </button>
+      </div>
     </div>
   </div>
 

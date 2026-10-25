@@ -98,12 +98,6 @@
     .portal-launch-card.user:hover {
       border-color: var(--primary);
     }
-    .portal-launch-card.beacon {
-      border-top: 6px solid #10b981;
-    }
-    .portal-launch-card.beacon:hover {
-      border-color: #10b981;
-    }
     .card-icon {
       width: 54px;
       height: 54px;
@@ -119,10 +113,6 @@
       background: var(--primary-light);
       color: var(--primary);
     }
-    .card-icon.beacon-icon {
-      background: rgba(16, 185, 129, 0.12);
-      color: #059669;
-    }
     .card-header-flex {
       display: flex;
       align-items: center;
@@ -132,21 +122,6 @@
     }
     .card-header-flex .card-title {
       margin-bottom: 0;
-    }
-    .btn-emerald {
-      background: linear-gradient(135deg, #059669 0%, #10b981 100%);
-      color: #ffffff !important;
-      border: none;
-      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
-    }
-    .btn-emerald:hover,
-    .btn-emerald:focus,
-    a.btn-emerald:hover,
-    a.btn-emerald:focus {
-      background: linear-gradient(135deg, #047857 0%, #059669 100%);
-      transform: translateY(-2px);
-      box-shadow: 0 8px 20px rgba(16, 185, 129, 0.45);
-      color: #ffffff !important;
     }
     .hero-scanner-callout {
       background: #ffffff;
@@ -286,32 +261,7 @@
         </a>
       </div>
 
-      <!-- 2. Staff Mobile Beacon (Dedicated Center Option) -->
-      <div class="portal-launch-card beacon">
-        <div>
-          <div class="card-icon beacon-icon">📡</div>
-          <div class="card-header-flex">
-            <h2 class="card-title">Staff Mobile Beacon</h2>
-            <span class="badge badge-success" style="font-size: 0.6875rem;">20+ Dynamic Hosts</span>
-          </div>
-          <p class="card-description">
-            Mobile display screen for 20+ authorized staff members broadcasting rotating anti-screenshot QR codes.
-          </p>
-          <ul class="card-features-list">
-            <li><span class="chk">✓</span> Auto-rotating dynamic QR code (20s security interval)</li>
-            <li><span class="chk">✓</span> Cryptographic HMAC token single-use rotation</li>
-            <li><span class="chk">✓</span> Screen Keep-Alive (Screen Wake Lock API)</li>
-            <li><span class="chk">✓</span> Strict 50-metre GPS geofence validation</li>
-            <li><span class="chk">✓</span> Dedicated host self-attendance check-in</li>
-            <li><span class="chk">✓</span> Live attendee scan count &amp; station attribution</li>
-          </ul>
-        </div>
-        <a href="/host.html" class="btn btn-emerald btn-lg btn-block" id="btnLaunchHost">
-          Launch Staff Beacon &rarr;
-        </a>
-      </div>
-
-      <!-- 3. Admin Portal -->
+      <!-- 2. Admin Portal -->
       <div class="portal-launch-card admin">
         <div>
           <div class="card-icon admin-icon">💻</div>

@@ -308,14 +308,24 @@ function renderEventsGrid() {
   });
 
   container.querySelectorAll('.btn-delete-event').forEach((btn) => {
-    btn.onclick = async () => {
-      if (confirm('Are you sure you want to delete this event? All associated attendance records will also be removed.')) {
-        await dbService.deleteEvent(btn.dataset.id);
-        showToast('Event deleted successfully', 'success');
-        await refreshAllData();
-      }
+    btn.onclick = () => {
+      openDeleteEventModal(btn.dataset.id);
     };
   });
+}
+
+let pendingEventIdToDelete = null;
+
+function openDeleteEventModal(eventId) {
+  const event = state.events.find((e) => e.id === eventId);
+  if (!event) return;
+
+  pendingEventIdToDelete = event.id;
+  const modal = document.getElementById('deleteEventConfirmModal');
+  const nameEl = document.getElementById('deleteEventConfirmName');
+  if (nameEl) nameEl.textContent = `"${event.name}"`;
+
+  if (modal) modal.classList.add('active');
 }
 
 // Open Edit Event Modal
@@ -1443,6 +1453,42 @@ function setupEventListeners() {
     };
   }
 
+  const btnDeleteFromEdit = document.getElementById('btnDeleteFromEditModal');
+  if (btnDeleteFromEdit) {
+    btnDeleteFromEdit.onclick = () => {
+      const eventId = document.getElementById('editEventId')?.value;
+      if (eventId) {
+        openDeleteEventModal(eventId);
+      }
+    };
+  }
+
+  const btnConfirmDelete = document.getElementById('btnConfirmDeleteEvent');
+  if (btnConfirmDelete) {
+    btnConfirmDelete.onclick = async () => {
+      if (!pendingEventIdToDelete) return;
+      const event = state.events.find((e) => e.id === pendingEventIdToDelete);
+      const eventName = event ? event.name : 'Event';
+      btnConfirmDelete.disabled = true;
+      btnConfirmDelete.textContent = 'Deleting...';
+      try {
+        await dbService.deleteEvent(pendingEventIdToDelete);
+        showToast(`Event "${eventName}" and all associated records deleted successfully.`, 'success');
+        const deleteModal = document.getElementById('deleteEventConfirmModal');
+        if (deleteModal) deleteModal.classList.remove('active');
+        const editModal = document.getElementById('editEventModal');
+        if (editModal) editModal.classList.remove('active');
+        await refreshAllData();
+      } catch (err) {
+        showToast('Failed to delete event: ' + err.message, 'error');
+      } finally {
+        btnConfirmDelete.disabled = false;
+        btnConfirmDelete.textContent = '🗑️ Yes, Delete Event';
+        pendingEventIdToDelete = null;
+      }
+    };
+  }
+
   // Filter Listeners
   const filterEvent = document.getElementById('filterEvent');
   const filterMode = document.getElementById('filterMode');
@@ -2103,25 +2149,6 @@ function setupLiveStreamControls() {
       const active = soundController.toggle();
       btnToggleSound.innerHTML = active ? '🔔 <span id="soundToggleLabel">Sound: ON</span>' : '🔕 <span id="soundToggleLabel">Sound: OFF</span>';
       showToast(active ? 'Live audio chime enabled' : 'Live audio chime muted', 'info');
-    };
-  }
-
-  const btnSimulate = document.getElementById('btnSimulateCheckin');
-  if (btnSimulate) {
-    btnSimulate.onclick = async () => {
-      btnSimulate.disabled = true;
-      btnSimulate.textContent = 'Verifying...';
-      try {
-        const result = await dbService.simulateRandomCheckIn(state.activeFilters.eventId || null);
-        if (!result.success) {
-          showToast(result.message, 'warning');
-        }
-      } catch (err) {
-        showToast('Simulation failed: ' + err.message, 'error');
-      } finally {
-        btnSimulate.disabled = false;
-        btnSimulate.textContent = '⚡ Test Live Stream';
-      }
     };
   }
 

@@ -463,3 +463,30 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- Grant execution to anon and authenticated users
 GRANT EXECUTE ON FUNCTION submit_attendance TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION calculate_haversine_distance TO anon, authenticated;
+
+-- ============================================================================
+-- HUMAN-READABLE LIVE ATTENDANCE VIEW (EASY TO READ & EXPORT DIRECTLY IN SUPABASE)
+-- ============================================================================
+CREATE OR REPLACE VIEW live_attendance_view AS
+SELECT 
+    a.id AS attendance_id,
+    e.name AS event_name,
+    e.date AS event_date,
+    m.full_name AS attendee_name,
+    m.member_code AS attendee_code,
+    m.role AS attendee_role,
+    m.phone_number AS attendee_phone,
+    d.name AS division_name,
+    b.name AS branch_name,
+    a.check_in_time,
+    ROUND(a.distance_meters::numeric, 1) AS distance_meters,
+    a.check_in_mode,
+    h.full_name AS host_staff_name,
+    a.verification_status
+FROM attendance a
+JOIN events e ON a.event_id = e.id
+JOIN members m ON a.member_id = m.id
+LEFT JOIN divisions d ON m.division_id = d.id
+LEFT JOIN branches b ON m.branch_id = b.id
+LEFT JOIN members h ON a.host_member_id = h.id
+ORDER BY a.check_in_time DESC;
