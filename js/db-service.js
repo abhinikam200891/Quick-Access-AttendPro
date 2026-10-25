@@ -677,8 +677,11 @@ export const dbService = {
         query = query.eq('is_active', filters.isActive);
       }
       const { data, error } = await query;
-      if (!error && data) return data;
-      console.warn('Supabase getEvents failed, fallback to local', error);
+      if (!error && Array.isArray(data)) return data;
+      console.warn('Supabase getEvents failed:', error);
+      if (this.isUsingSupabase()) {
+        return [];
+      }
     }
 
     let events = mockDb.get('events');
@@ -1139,7 +1142,10 @@ export const dbService = {
           }));
         }
       } catch (e) {
-        console.warn('Supabase getAttendanceRecords failed, using local', e);
+        console.warn('Supabase getAttendanceRecords failed:', e);
+      }
+      if (this.isUsingSupabase()) {
+        return [];
       }
     }
 
@@ -1282,23 +1288,58 @@ export const dbService = {
         }
 
         const { data, error } = await query;
-        if (!error && data) {
+        if (!error && Array.isArray(data)) {
           return data.map((m) => ({
             id: m.id,
             role: m.role,
             member_code: m.member_code,
             full_name: m.full_name,
             phone_number: m.phone_number,
-            division_id: m.divisions?.id,
-            division_name: m.divisions?.name,
-            branch_id: m.branches?.id,
-            branch_name: m.branches?.name,
+            division_id: m.divisions?.id || m.division_id,
+            division_name: m.divisions?.name || 'Unknown',
+            branch_id: m.branches?.id || m.branch_id,
+            branch_name: m.branches?.name || 'Unknown',
             is_active: m.is_active,
             created_at: m.created_at
           }));
         }
+
+        // If nested query failed, try flat query
+        console.warn('Nested Supabase members query failed, trying flat query:', error);
+        let flatQuery = supabase.from('members').select('*').order('full_name');
+        if (filters.branchId && filters.branchId !== 'All') flatQuery = flatQuery.eq('branch_id', filters.branchId);
+        if (filters.divisionId && filters.divisionId !== 'All') flatQuery = flatQuery.eq('division_id', filters.divisionId);
+        if (filters.role && filters.role !== 'All') flatQuery = flatQuery.eq('role', filters.role);
+        if (filters.isActive !== undefined) flatQuery = flatQuery.eq('is_active', filters.isActive);
+
+        const { data: flatData, error: flatError } = await flatQuery;
+        if (!flatError && Array.isArray(flatData)) {
+          const [divs, brs] = await Promise.all([this.getDivisions(), this.getBranches()]);
+          const divMap = new Map(divs.map((d) => [d.id, d.name]));
+          const brMap = new Map(brs.map((b) => [b.id, b.name]));
+          return flatData.map((m) => ({
+            id: m.id,
+            role: m.role,
+            member_code: m.member_code,
+            full_name: m.full_name,
+            phone_number: m.phone_number,
+            division_id: m.division_id,
+            division_name: divMap.get(m.division_id) || 'Unknown',
+            branch_id: m.branch_id,
+            branch_name: brMap.get(m.branch_id) || 'Unknown',
+            is_active: m.is_active,
+            created_at: m.created_at
+          }));
+        }
+
+        if (flatError) {
+          console.error('[Supabase] Flat members query error:', flatError);
+        }
       } catch (e) {
-        console.warn('Supabase getMembers error, fallback local', e);
+        console.error('Supabase getMembers error:', e);
+      }
+      if (this.isUsingSupabase()) {
+        return [];
       }
     }
 
