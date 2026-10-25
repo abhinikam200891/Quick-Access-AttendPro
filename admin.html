@@ -765,6 +765,102 @@
     </div>
   </div>
 
+  <!-- 1B. EDIT EVENT MODAL -->
+  <div class="modal-backdrop" id="editEventModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">✏️ Edit Attendance Event</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <form id="editEventForm">
+        <input type="hidden" id="editEventId" />
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label" for="editEventName">Event Name <span class="required">*</span></label>
+            <input type="text" id="editEventName" class="form-control" placeholder="e.g., Annual Strategy Summit 2026" required />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="editEventVenue">Venue Location <span class="required">*</span></label>
+            <input type="text" id="editEventVenue" class="form-control" placeholder="e.g., Grand Hyatt Ballroom, Hall 3" required />
+          </div>
+
+          <div class="form-row-2col">
+            <div class="form-group">
+              <label class="form-label" for="editEventDate">Event Date <span class="required">*</span></label>
+              <input type="date" id="editEventDate" class="form-control" required />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="editEventPermittedRoles">Permitted Roles</label>
+              <select id="editEventPermittedRoles" class="form-control form-select" title="Permitted attendee roles" aria-label="Permitted attendee roles">
+                <option value="All">All (Staff &amp; Agents)</option>
+                <option value="Staff">Staff Only</option>
+                <option value="Agent">Agent Only</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row-2col">
+            <div class="form-group">
+              <label class="form-label" for="editEventStartTime">Check-in Opens (Start)</label>
+              <input type="time" id="editEventStartTime" class="form-control" required />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="editEventEndTime">Check-in Closes (End)</label>
+              <input type="time" id="editEventEndTime" class="form-control" required />
+            </div>
+          </div>
+
+          <!-- Geofence Coordinates & Radius Adjustments -->
+          <div class="form-group geofence-box">
+            <div class="geofence-header">
+              <label class="form-label label-no-margin">📍 Venue GPS Coordinates &amp; Geofence</label>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnDetectEditGps">
+                🎯 Use Current GPS Location
+              </button>
+            </div>
+
+            <!-- Interactive Leaflet Map Picker for Edit -->
+            <div class="geofence-map-wrapper" style="margin-bottom: 14px;">
+              <div class="map-toolbar">
+                <span style="font-weight:600; color:#1e293b; display:inline-flex; align-items:center; gap:6px;">
+                  <span>🗺️</span> Adjust Geofence Pin &amp; Boundary
+                </span>
+                <span style="font-size:0.75rem; color:#64748b;">Click map or drag pin to update location</span>
+              </div>
+              <div id="editGeofenceMap" class="geofence-map-container admin-picker"></div>
+            </div>
+
+            <div class="form-row-coords">
+              <input type="number" step="any" id="editEventLatitude" class="form-control" placeholder="Latitude (e.g. 28.6139)" title="Venue latitude coordinates" aria-label="Venue latitude coordinates" />
+              <input type="number" step="any" id="editEventLongitude" class="form-control" placeholder="Longitude (e.g. 77.2090)" title="Venue longitude coordinates" aria-label="Venue longitude coordinates" />
+            </div>
+
+            <div class="form-row-coords coords-spaced">
+              <div>
+                <label class="form-label" for="editEventRadius">Allowed Radius (Meters) <span class="required">*</span></label>
+                <input type="number" id="editEventRadius" class="form-control" value="50" min="10" max="5000" required />
+              </div>
+              <div class="coords-checkbox-wrap">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="editEventLocationRequired" />
+                  <strong>Enforce Geofence GPS Check</strong>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-modal-dismiss">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btnSaveEditedEvent">💾 Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- 2. QR CODE PREVIEW & PRINT MODAL -->
   <div class="modal-backdrop" id="qrModal">
     <div class="modal-card">

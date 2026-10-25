@@ -7,7 +7,7 @@
 
 .mobile-viewport {
   min-height: 100vh;
-  background: linear-gradient(180deg, #0b0f19 0%, #15162c 35%, #0b0f19 100%);
+  background: var(--bg-main, #f8fafc);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -29,12 +29,11 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 16px;
-  background: rgba(15, 23, 42, 0.7);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #ffffff;
+  border: 1px solid var(--border-subtle, #e2e8f0);
   border-radius: var(--radius-lg);
-  color: #ffffff;
+  color: #0f172a;
+  box-shadow: var(--shadow-sm);
   animation: fadeInDown 0.3s ease-out;
 }
 
@@ -53,16 +52,16 @@
   font-family: var(--font-heading);
   font-weight: 700;
   font-size: 1rem;
-  color: #ffffff;
+  color: #0f172a;
 }
 
 .brand-badge-pill {
   font-size: 0.6875rem;
   padding: 2px 8px;
   border-radius: var(--radius-full);
-  background: rgba(79, 70, 229, 0.3);
-  color: #a5b4fc;
-  border: 1px solid rgba(129, 140, 248, 0.3);
+  background: #eef2ff;
+  color: #4f46e5;
+  border: 1px solid #c7d2fe;
   margin-left: 6px;
   font-weight: 600;
 }
@@ -77,9 +76,9 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: #e2e8f0;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #334155;
   padding: 6px 12px;
   border-radius: var(--radius-full);
   font-size: 0.75rem;
@@ -89,13 +88,13 @@
 }
 
 .view-toggle-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
-  color: #ffffff;
+  background: #e2e8f0;
+  color: #0f172a;
 }
 
 .topbar-admin-link {
   font-size: 0.8125rem;
-  color: #94a3b8;
+  color: #64748b;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -103,7 +102,7 @@
 }
 
 .topbar-admin-link:hover {
-  color: #ffffff;
+  color: #0f172a;
 }
 
 /* ==========================================================================

@@ -9,7 +9,6 @@ import { dbService } from './db-service.js';
 import { calculateDistanceMeters, formatDistance, getCurrentPosition } from './haversine.js';
 import { initAttendeeRadarMap } from './geo-map.js';
 import { openInAppScanner } from './camera-scanner.js';
-import { saveOfflineAttendance, setupOfflineSyncListener } from './offline-queue.js';
 import { soundController } from './audio-chime.js';
 
 // Controller State
@@ -37,9 +36,6 @@ export async function initCheckInPortal() {
   setupMemberSelectSync();
   setupFormListeners();
   setupScannerAction();
-  setupOfflineSyncListener(dbService, () => {
-    console.log('[Checkin] Offline attendance successfully synchronized.');
-  });
 
   // If no eventId in query string, auto-load the single active event
   if (!checkinState.eventId) {
@@ -684,11 +680,9 @@ function setupFormListeners() {
         branchName: branchName
       };
 
-      // Check if user is offline
+      // Require live internet connection - strictly online attendance only
       if (!navigator.onLine) {
-        console.warn('[Checkin] Device is offline. Stashing to local offline queue...');
-        const provisional = saveOfflineAttendance(payload, eventContext);
-        showAttendancePass(provisional);
+        showRejectionNotice('Live internet connection required to record attendance. Please connect to mobile data or Wi-Fi and retry.');
         checkinState.isSubmitting = false;
         submitBtn.disabled = false;
         submitBtnText.textContent = 'Confirm & Mark Attendance';
@@ -705,10 +699,8 @@ function setupFormListeners() {
           showRejectionNotice(result.message || 'Validation failed. Please verify your details and retry.');
         }
       } catch (err) {
-        console.warn('Network submission failed, saving to offline queue:', err);
-        // Fallback to offline queue
-        const provisional = saveOfflineAttendance(payload, eventContext);
-        showAttendancePass(provisional);
+        console.error('Online attendance submission failed:', err);
+        showRejectionNotice(err.message || 'Attendance recording failed. A stable live internet connection is required.');
       } finally {
         checkinState.isSubmitting = false;
         submitBtn.disabled = false;
@@ -752,15 +744,6 @@ function showAttendancePass(data) {
       : 'Verified';
   }
 
-  // Toggle offline sync badge
-  const offlineBadge = document.getElementById('passOfflineBadge');
-  if (offlineBadge) {
-    if (data.is_offline) {
-      offlineBadge.classList.remove('is-hidden');
-    } else {
-      offlineBadge.classList.add('is-hidden');
-    }
-  }
 
   const passHostField = document.getElementById('passHostField');
   const passVerifiedBy = document.getElementById('passVerifiedBy');

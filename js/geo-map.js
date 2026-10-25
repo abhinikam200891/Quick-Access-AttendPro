@@ -44,9 +44,19 @@ export function initAdminGeofencePicker(containerId, initialCoords = {}, initial
   const container = document.getElementById(containerId);
   if (!container) return null;
 
-  const lat = initialCoords.latitude || 28.6139;
-  const lon = initialCoords.longitude || 77.2090;
-  const radius = initialRadius || 50;
+  let lat = 28.6139;
+  let lon = 77.2090;
+  let radius = 50;
+  let callback = typeof onChange === 'function' ? onChange : null;
+
+  if (typeof initialCoords === 'object' && initialCoords !== null) {
+    lat = initialCoords.latitude || initialCoords.initialLat || initialCoords.lat || 28.6139;
+    lon = initialCoords.longitude || initialCoords.initialLng || initialCoords.lng || 77.2090;
+    if (initialCoords.initialRadius) radius = initialCoords.initialRadius;
+    if (typeof initialCoords.onLocationChange === 'function') callback = initialCoords.onLocationChange;
+  }
+  if (typeof initialRadius === 'number') radius = initialRadius;
+  if (typeof initialRadius === 'function') callback = initialRadius;
 
   // Initialize Leaflet Map
   const map = L.map(container, {
@@ -84,10 +94,12 @@ export function initAdminGeofencePicker(containerId, initialCoords = {}, initial
     circle.setLatLng([newLat, newLon]);
     circle.setRadius(curRadius);
 
-    if (onChange) {
-      onChange({
+    if (callback) {
+      callback({
         latitude: Math.round(newLat * 1000000) / 1000000,
         longitude: Math.round(newLon * 1000000) / 1000000,
+        lat: Math.round(newLat * 1000000) / 1000000,
+        lng: Math.round(newLon * 1000000) / 1000000,
         radius: curRadius
       });
     }
@@ -115,6 +127,9 @@ export function initAdminGeofencePicker(containerId, initialCoords = {}, initial
     },
     setRadius: (r) => {
       circle.setRadius(r);
+    },
+    invalidateSize: () => {
+      map.invalidateSize();
     },
     destroy: () => map.remove()
   };

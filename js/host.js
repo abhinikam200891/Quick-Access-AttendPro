@@ -412,6 +412,11 @@ function setupHostSelfCheckinButton() {
   if (!btn) return;
 
   btn.onclick = async () => {
+    if (!navigator.onLine) {
+      alert('Live internet connection required to record attendance. Please reconnect to mobile data or Wi-Fi.');
+      return;
+    }
+
     btn.disabled = true;
     spinner.classList.remove('spinner-hidden');
 

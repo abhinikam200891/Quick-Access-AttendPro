@@ -745,6 +745,55 @@ export const dbService = {
     return newEvent;
   },
 
+  async updateEvent(eventId, eventData) {
+    const updatePayload = {};
+    if (eventData.name !== undefined) updatePayload.name = eventData.name;
+    if (eventData.date !== undefined) updatePayload.date = eventData.date;
+    if (eventData.venue !== undefined) updatePayload.venue = eventData.venue;
+    if (eventData.start_time !== undefined) updatePayload.start_time = eventData.start_time;
+    if (eventData.end_time !== undefined) updatePayload.end_time = eventData.end_time;
+    if (eventData.permitted_roles !== undefined) updatePayload.permitted_roles = eventData.permitted_roles;
+    if (eventData.latitude !== undefined) updatePayload.latitude = eventData.latitude !== null && eventData.latitude !== '' ? Number(eventData.latitude) : null;
+    if (eventData.longitude !== undefined) updatePayload.longitude = eventData.longitude !== null && eventData.longitude !== '' ? Number(eventData.longitude) : null;
+    if (eventData.radius_meters !== undefined) updatePayload.radius_meters = Number(eventData.radius_meters) || 50;
+    if (eventData.location_required !== undefined) updatePayload.location_required = Boolean(eventData.location_required);
+    if (eventData.is_active !== undefined) updatePayload.is_active = Boolean(eventData.is_active);
+    updatePayload.updated_at = new Date().toISOString();
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('events')
+          .update(updatePayload)
+          .eq('id', eventId)
+          .select()
+          .single();
+        if (!error && data) {
+          const events = mockDb.get('events');
+          const idx = events.findIndex((e) => e.id === eventId);
+          if (idx !== -1) {
+            events[idx] = { ...events[idx], ...data };
+            mockDb.save('events', events);
+          }
+          return data;
+        }
+        if (error) console.warn('Supabase updateEvent error, saving locally:', error);
+      } catch (err) {
+        console.warn('Supabase updateEvent exception:', err);
+      }
+    }
+
+    const events = mockDb.get('events');
+    const idx = events.findIndex((e) => e.id === eventId);
+    if (idx !== -1) {
+      events[idx] = { ...events[idx], ...updatePayload };
+      mockDb.save('events', events);
+      return events[idx];
+    }
+    return null;
+  },
+
   async updateEventStatus(eventId, isActive) {
     const supabase = getSupabaseClient();
     if (supabase) {

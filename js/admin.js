@@ -261,6 +261,9 @@ function renderEventsGrid() {
           <button class="btn btn-secondary btn-sm btn-print-signage" data-id="${event.id}">
             🖨️ Print
           </button>
+          <button class="btn btn-secondary btn-sm btn-edit-event" data-id="${event.id}" title="Edit event date, time, venue, permitted roles, and GPS geofence radius">
+            ✏️ Edit
+          </button>
           <button class="btn btn-ghost btn-sm btn-toggle-status" data-id="${event.id}">
             ${event.is_active ? '⏸️ Deactivate' : '▶️ Activate'}
           </button>
@@ -289,6 +292,10 @@ function renderEventsGrid() {
     };
   });
 
+  container.querySelectorAll('.btn-edit-event').forEach((btn) => {
+    btn.onclick = () => openEditEventModal(btn.dataset.id);
+  });
+
   container.querySelectorAll('.btn-toggle-status').forEach((btn) => {
     btn.onclick = async () => {
       const event = state.events.find((e) => e.id === btn.dataset.id);
@@ -309,6 +316,52 @@ function renderEventsGrid() {
       }
     };
   });
+}
+
+// Open Edit Event Modal
+function openEditEventModal(eventId) {
+  const event = state.events.find((e) => e.id === eventId);
+  if (!event) return;
+
+  const modal = document.getElementById('editEventModal');
+  if (!modal) return;
+
+  document.getElementById('editEventId').value = event.id;
+  document.getElementById('editEventName').value = event.name || '';
+  document.getElementById('editEventVenue').value = event.venue || '';
+  document.getElementById('editEventDate').value = event.date || '';
+  document.getElementById('editEventPermittedRoles').value = event.permitted_roles || 'All';
+  document.getElementById('editEventStartTime').value = (event.start_time || '08:00').slice(0, 5);
+  document.getElementById('editEventEndTime').value = (event.end_time || '20:00').slice(0, 5);
+  document.getElementById('editEventRadius').value = event.radius_meters || 50;
+  document.getElementById('editEventLocationRequired').checked = Boolean(event.location_required);
+
+  const lat = event.latitude !== null && event.latitude !== undefined && event.latitude !== '' ? Number(event.latitude) : 28.6139;
+  const lng = event.longitude !== null && event.longitude !== undefined && event.longitude !== '' ? Number(event.longitude) : 77.2090;
+  document.getElementById('editEventLatitude').value = event.latitude !== null && event.latitude !== undefined ? event.latitude : '';
+  document.getElementById('editEventLongitude').value = event.longitude !== null && event.longitude !== undefined ? event.longitude : '';
+
+  modal.classList.add('active');
+
+  setTimeout(() => {
+    const latInput = document.getElementById('editEventLatitude');
+    const lngInput = document.getElementById('editEventLongitude');
+    const radInput = document.getElementById('editEventRadius');
+    const radius = parseInt(radInput?.value, 10) || 50;
+
+    if (!state.editGeofencePicker) {
+      state.editGeofencePicker = initAdminGeofencePicker('editGeofenceMap', {
+        latitude: lat,
+        longitude: lng
+      }, radius, (coords) => {
+        if (latInput) latInput.value = coords.latitude.toFixed(6);
+        if (lngInput) lngInput.value = coords.longitude.toFixed(6);
+      });
+    } else {
+      state.editGeofencePicker.setCoordinates(lat, lng);
+      state.editGeofencePicker.setRadius(radius);
+    }
+  }, 150);
 }
 
 // Open QR Code Preview Modal
@@ -1289,6 +1342,107 @@ function setupEventListeners() {
     };
   }
 
+  // Edit Event Form Submit & GPS listeners
+  const editEventForm = document.getElementById('editEventForm');
+  const editModal = document.getElementById('editEventModal');
+
+  const editRadiusInput = document.getElementById('editEventRadius');
+  if (editRadiusInput) {
+    editRadiusInput.addEventListener('input', (e) => {
+      const rad = parseInt(e.target.value, 10) || 50;
+      if (state.editGeofencePicker) {
+        state.editGeofencePicker.setRadius(rad);
+      }
+    });
+  }
+
+  const syncEditCoordsToMap = () => {
+    const lat = parseFloat(document.getElementById('editEventLatitude')?.value);
+    const lng = parseFloat(document.getElementById('editEventLongitude')?.value);
+    if (!isNaN(lat) && !isNaN(lng) && state.editGeofencePicker) {
+      state.editGeofencePicker.setCoordinates(lat, lng);
+    }
+  };
+  document.getElementById('editEventLatitude')?.addEventListener('change', syncEditCoordsToMap);
+  document.getElementById('editEventLongitude')?.addEventListener('change', syncEditCoordsToMap);
+
+  const btnDetectEditLocation = document.getElementById('btnDetectEditGps');
+  if (btnDetectEditLocation) {
+    btnDetectEditLocation.onclick = async () => {
+      try {
+        btnDetectEditLocation.disabled = true;
+        btnDetectEditLocation.textContent = 'Detecting GPS...';
+        const pos = await getCurrentPosition();
+        document.getElementById('editEventLatitude').value = pos.latitude.toFixed(6);
+        document.getElementById('editEventLongitude').value = pos.longitude.toFixed(6);
+        if (state.editGeofencePicker) {
+          state.editGeofencePicker.setCoordinates(pos.latitude, pos.longitude);
+        }
+        showToast(`Venue GPS locked: ${pos.latitude.toFixed(4)}, ${pos.longitude.toFixed(4)}`, 'success');
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        btnDetectEditLocation.disabled = false;
+        btnDetectEditLocation.textContent = '🎯 Use Current GPS Location';
+      }
+    };
+  }
+
+  if (editEventForm) {
+    editEventForm.onsubmit = async (e) => {
+      e.preventDefault();
+      const eventId = document.getElementById('editEventId').value;
+      if (!eventId) return;
+
+      const submitBtn = document.getElementById('btnSaveEditedEvent');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Saving Changes...';
+      }
+
+      try {
+        const payload = {
+          name: document.getElementById('editEventName').value.trim(),
+          venue: document.getElementById('editEventVenue').value.trim(),
+          date: document.getElementById('editEventDate').value,
+          start_time: document.getElementById('editEventStartTime').value.length === 5
+            ? document.getElementById('editEventStartTime').value + ':00'
+            : document.getElementById('editEventStartTime').value,
+          end_time: document.getElementById('editEventEndTime').value.length === 5
+            ? document.getElementById('editEventEndTime').value + ':00'
+            : document.getElementById('editEventEndTime').value,
+          permitted_roles: document.getElementById('editEventPermittedRoles').value,
+          latitude: document.getElementById('editEventLatitude').value ? Number(document.getElementById('editEventLatitude').value) : null,
+          longitude: document.getElementById('editEventLongitude').value ? Number(document.getElementById('editEventLongitude').value) : null,
+          radius_meters: Number(document.getElementById('editEventRadius').value) || 50,
+          location_required: document.getElementById('editEventLocationRequired').checked
+        };
+
+        const updated = await dbService.updateEvent(eventId, payload);
+        if (updated) {
+          const idx = state.events.findIndex((ev) => ev.id === eventId);
+          if (idx !== -1) {
+            state.events[idx] = { ...state.events[idx], ...updated };
+          }
+        }
+
+        if (editModal) editModal.classList.remove('active');
+        showToast('Event updated successfully! New schedule & GPS radius applied.', 'success');
+        renderEventsGrid();
+        renderKpis();
+        await refreshAllData();
+      } catch (err) {
+        console.error('Update event error:', err);
+        showToast(err.message || 'Failed to update event.', 'error');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = '💾 Save Changes';
+        }
+      }
+    };
+  }
+
   // Filter Listeners
   const filterEvent = document.getElementById('filterEvent');
   const filterMode = document.getElementById('filterMode');
@@ -1799,13 +1953,33 @@ function setupEventListeners() {
   }
 }
 
-// -----------------------------------------------------------------------------
-// LIVE REAL-TIME FEED & STREAM CONTROLS
-// -----------------------------------------------------------------------------
+let realtimePollInterval = null;
+
 function setupRealtimeFeed() {
+  // 1. Supabase Realtime WebSocket Listener
   dbService.subscribeToAttendance((newRecord) => {
     handleNewLiveAttendance(newRecord);
   });
+
+  // 2. High-reliability Polling Sync (guarantees screen updates even if WebSocket drops)
+  if (realtimePollInterval) clearInterval(realtimePollInterval);
+  realtimePollInterval = setInterval(async () => {
+    try {
+      const records = await dbService.getAttendanceRecords();
+      if (!Array.isArray(records) || records.length === 0) return;
+
+      const currentIds = new Set(state.attendance.map((r) => r.id));
+      // Process newest records first
+      for (const r of records) {
+        if (!currentIds.has(r.id)) {
+          handleNewLiveAttendance(r);
+          currentIds.add(r.id);
+        }
+      }
+    } catch (err) {
+      // Background poll silently catches network hiccups
+    }
+  }, 3000);
 }
 
 function handleNewLiveAttendance(newRecord) {
