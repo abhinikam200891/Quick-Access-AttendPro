@@ -1100,25 +1100,44 @@ export const dbService = {
     const supabase = getSupabaseClient();
     if (supabase) {
       try {
-        let query = supabase.from('attendance').select(`
-          id,
-          check_in_time,
-          latitude,
-          longitude,
-          distance_meters,
-          verification_status,
-          events (id, name, venue, date),
-          members (id, role, member_code, full_name, phone_number,
-            divisions (id, name),
-            branches (id, name)
-          )
-        `).order('check_in_time', { ascending: false });
+        const buildAttendanceQuery = () => {
+          let q = supabase.from('attendance').select(`
+            id,
+            check_in_time,
+            latitude,
+            longitude,
+            distance_meters,
+            verification_status,
+            events (id, name, venue, date),
+            members (id, role, member_code, full_name, phone_number,
+              divisions (id, name),
+              branches (id, name)
+            )
+          `).order('check_in_time', { ascending: false });
 
-        if (filters.eventId) query = query.eq('event_id', filters.eventId);
-        const { data, error } = await query;
-        if (!error && data) {
+          if (filters.eventId) q = q.eq('event_id', filters.eventId);
+          return q;
+        };
+
+        let allRecords = [];
+        let from = 0;
+        const pageSize = 1000;
+
+        while (true) {
+          const { data, error } = await buildAttendanceQuery().range(from, from + pageSize - 1);
+          if (error) {
+            console.warn('Supabase getAttendanceRecords failed:', error);
+            break;
+          }
+          if (!data || data.length === 0) break;
+          allRecords.push(...data);
+          if (data.length < pageSize) break;
+          from += pageSize;
+        }
+
+        if (allRecords.length > 0) {
           // Normalize structure
-          return data.map((row) => ({
+          return allRecords.map((row) => ({
             id: row.id,
             event_id: row.events?.id,
             event_name: row.events?.name,
