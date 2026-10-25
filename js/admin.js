@@ -318,7 +318,7 @@ async function openQrModal(eventId) {
 }
 
 // -----------------------------------------------------------------------------
-// AUTHORIZED STAFF ROTATING QR BEACONS (20+ MOBILE HOSTS)
+// AUTHORIZED STAFF ROTATING QR BEACONS (MOBILE HOSTS)
 // -----------------------------------------------------------------------------
 async function openHostsModal(eventId) {
   const event = state.events.find((e) => e.id === eventId);
@@ -330,6 +330,12 @@ async function openHostsModal(eventId) {
   const tbody = document.getElementById('hostsTableBody');
   const searchInput = document.getElementById('hostsSearchInput');
   const countBadge = document.getElementById('hostsSelectedCount');
+  const btnFilterAuth = document.getElementById('btnFilterAuthorizedHosts');
+  const btnFilterAll = document.getElementById('btnFilterAllHosts');
+  const tabAuthBadge = document.getElementById('hostsAuthTabCount');
+  const tabAllBadge = document.getElementById('hostsAllStaffTabCount');
+  const btnSelectAll = document.getElementById('btnSelectAllHosts');
+  const btnDeselectAll = document.getElementById('btnDeselectAllHosts');
 
   if (subtitleEl) {
     subtitleEl.textContent = `Event: ${event.name} (${event.venue}) • Assign Staff to Take Attendance via Mobile Beacons`;
@@ -346,21 +352,107 @@ async function openHostsModal(eventId) {
   // Filter all staff members from state
   const staffMembers = state.members.filter((m) => m.role === 'Staff');
 
+  // Maintain working state: memberId -> { isChecked, station }
+  const workingState = new Map();
+  staffMembers.forEach((m) => {
+    const existing = authMap.get(m.id);
+    workingState.set(m.id, {
+      isChecked: existing ? existing.is_active !== false : false,
+      station: existing?.station_name || 'Main Gate'
+    });
+  });
+
+  const getAuthorizedCount = () => Array.from(workingState.values()).filter((v) => v.isChecked).length;
+
+  // Initial view mode: if any staff are authorized, open to 'authorized' tab directly; else 'all'
+  let currentMode = getAuthorizedCount() > 0 ? 'authorized' : 'all';
+
+  function updateViewTabButtons() {
+    if (btnFilterAuth) btnFilterAuth.classList.toggle('active', currentMode === 'authorized');
+    if (btnFilterAll) btnFilterAll.classList.toggle('active', currentMode === 'all');
+    if (btnSelectAll) btnSelectAll.style.display = currentMode === 'all' ? 'inline-flex' : 'none';
+  }
+
+  function updateAuthCount() {
+    const totalChecked = getAuthorizedCount();
+    if (countBadge) {
+      countBadge.textContent = `${totalChecked} Authorized`;
+      countBadge.className = totalChecked > 0 ? 'badge badge-success' : 'badge badge-neutral';
+    }
+    if (tabAuthBadge) tabAuthBadge.textContent = totalChecked;
+    if (tabAllBadge) tabAllBadge.textContent = staffMembers.length;
+  }
+
   function renderRows(filterText = '') {
+    updateAuthCount();
+    updateViewTabButtons();
+
+    let staffList = staffMembers;
+    if (currentMode === 'authorized') {
+      staffList = staffMembers.filter((m) => workingState.get(m.id)?.isChecked);
+    }
+
     const ft = filterText.toLowerCase().trim();
-    const filteredStaff = staffMembers.filter((m) => {
+    const filteredStaff = staffList.filter((m) => {
       if (!ft) return true;
       const matchName = m.full_name && m.full_name.toLowerCase().includes(ft);
       const matchCode = m.member_code && String(m.member_code).toLowerCase().includes(ft);
       const matchDiv = m.division_name && m.division_name.toLowerCase().includes(ft);
-      return Boolean(matchName || matchCode || matchDiv);
+      const matchBranch = m.branch_name && m.branch_name.toLowerCase().includes(ft);
+      return Boolean(matchName || matchCode || matchDiv || matchBranch);
     });
+
+    if (filteredStaff.length === 0) {
+      if (currentMode === 'authorized') {
+        const totalAuth = getAuthorizedCount();
+        if (totalAuth === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="5" style="text-align:center; padding: 40px 16px;">
+                <div style="font-size: 2.2rem; margin-bottom: 8px;">👥</div>
+                <div style="font-weight: 700; font-size: 1rem; color: var(--text-primary); margin-bottom: 4px;">No Attendance Takers Assigned Yet</div>
+                <p style="color: var(--text-secondary); max-width: 420px; margin: 0 auto 16px; font-size: 0.85rem;">
+                  No staff members have been authorized for this event yet. Browse the full staff directory to assign staff members.
+                </p>
+                <button type="button" class="btn btn-primary btn-sm" id="btnEmptyBrowseAll">
+                  👥 Browse All Staff Directory (${staffMembers.length})
+                </button>
+              </td>
+            </tr>
+          `;
+          const btnBrowse = tbody.querySelector('#btnEmptyBrowseAll');
+          if (btnBrowse) {
+            btnBrowse.onclick = () => {
+              currentMode = 'all';
+              renderRows(searchInput.value);
+            };
+          }
+        } else {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="5" style="text-align:center; padding: 32px 16px; color: var(--text-secondary);">
+                🔍 No assigned attendance takers match "<strong>${escapeHtml(ft)}</strong>".
+              </td>
+            </tr>
+          `;
+        }
+      } else {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="5" style="text-align:center; padding: 32px 16px; color: var(--text-secondary);">
+              🔍 No staff members match "<strong>${escapeHtml(ft)}</strong>".
+            </td>
+          </tr>
+        `;
+      }
+      return;
+    }
 
     tbody.innerHTML = filteredStaff
       .map((m) => {
-        const existing = authMap.get(m.id);
-        const isChecked = existing ? existing.is_active !== false : false;
-        const station = existing?.station_name || 'Main Gate';
+        const stateObj = workingState.get(m.id) || {};
+        const isChecked = stateObj.isChecked;
+        const station = stateObj.station || 'Main Gate';
         const hostLink = `${window.location.origin}/host.html?event=${event.id}&host=${m.member_code}`;
 
         return `
@@ -377,7 +469,7 @@ async function openHostsModal(eventId) {
               <div style="font-size:0.75rem; color:var(--text-muted);">${escapeHtml(m.branch_name || '')}</div>
             </td>
             <td>
-              <input type="text" class="host-station-input" value="${escapeHtml(station)}" placeholder="e.g. Gate 1 / Hall Entrance" />
+              <input type="text" class="host-station-input" value="${escapeHtml(station)}" placeholder="e.g. Gate 1 / Registration Desk" />
             </td>
             <td class="host-actions-cell" style="text-align: right;">
               <a href="${hostLink}" target="_blank" class="btn btn-secondary btn-sm" title="Open Mobile Rotating QR Beacon for this Staff Member">
@@ -386,6 +478,11 @@ async function openHostsModal(eventId) {
               <button type="button" class="btn btn-ghost btn-sm btn-copy-host-link" data-link="${hostLink}" title="Copy Mobile Link to send to Staff via WhatsApp/SMS">
                 📋 Copy
               </button>
+              ${isChecked ? `
+                <button type="button" class="btn btn-ghost btn-sm btn-quick-unassign" data-member-id="${m.id}" title="Remove this staff member from taking attendance" style="color:var(--accent-rose);">
+                  ❌ Remove
+                </button>
+              ` : ''}
             </td>
           </tr>
         `;
@@ -400,22 +497,62 @@ async function openHostsModal(eventId) {
       };
     });
 
-    // Update count badge
-    updateAuthCount();
+    // Attach quick unassign button listeners
+    tbody.querySelectorAll('.btn-quick-unassign').forEach((btn) => {
+      btn.onclick = () => {
+        const memberId = btn.dataset.memberId;
+        const stateObj = workingState.get(memberId);
+        if (stateObj) {
+          stateObj.isChecked = false;
+          workingState.set(memberId, stateObj);
+        }
+        updateAuthCount();
+        renderRows(searchInput.value);
+        showToast('Staff unassigned from event hosts', 'info');
+      };
+    });
   }
 
-  function updateAuthCount() {
-    const totalChecked = modal.querySelectorAll('.host-auth-checkbox:checked').length;
-    if (countBadge) {
-      countBadge.textContent = `${totalChecked} Authorized`;
-      countBadge.className = totalChecked > 0 ? 'badge badge-success' : 'badge badge-neutral';
-    }
+  // View Filter Tab Switchers
+  if (btnFilterAuth) {
+    btnFilterAuth.onclick = () => {
+      currentMode = 'authorized';
+      renderRows(searchInput.value);
+    };
+  }
+  if (btnFilterAll) {
+    btnFilterAll.onclick = () => {
+      currentMode = 'all';
+      renderRows(searchInput.value);
+    };
   }
 
-  // Checkbox change listener
+  // Checkbox and Station Input listeners
   tbody.onchange = (e) => {
     if (e.target.classList.contains('host-auth-checkbox')) {
-      updateAuthCount();
+      const row = e.target.closest('tr');
+      const memberId = row?.dataset.memberId;
+      if (memberId) {
+        const stateObj = workingState.get(memberId) || {};
+        stateObj.isChecked = e.target.checked;
+        workingState.set(memberId, stateObj);
+        updateAuthCount();
+        if (currentMode === 'authorized' && !e.target.checked) {
+          renderRows(searchInput.value);
+        }
+      }
+    }
+  };
+
+  tbody.oninput = (e) => {
+    if (e.target.classList.contains('host-station-input')) {
+      const row = e.target.closest('tr');
+      const memberId = row?.dataset.memberId;
+      if (memberId) {
+        const stateObj = workingState.get(memberId) || {};
+        stateObj.station = e.target.value.trim();
+        workingState.set(memberId, stateObj);
+      }
     }
   };
 
@@ -425,24 +562,23 @@ async function openHostsModal(eventId) {
   }
 
   // Select all / deselect all
-  const btnSelectAll = document.getElementById('btnSelectAllHosts');
-  const btnDeselectAll = document.getElementById('btnDeselectAllHosts');
-
   if (btnSelectAll) {
     btnSelectAll.onclick = () => {
-      modal.querySelectorAll('.host-auth-checkbox').forEach((cb) => {
-        cb.checked = true;
+      workingState.forEach((val) => {
+        val.isChecked = true;
       });
-      updateAuthCount();
+      renderRows(searchInput.value);
+      showToast('All staff members authorized', 'info');
     };
   }
 
   if (btnDeselectAll) {
     btnDeselectAll.onclick = () => {
-      modal.querySelectorAll('.host-auth-checkbox').forEach((cb) => {
-        cb.checked = false;
+      workingState.forEach((val) => {
+        val.isChecked = false;
       });
-      updateAuthCount();
+      renderRows(searchInput.value);
+      showToast('All staff de-authorized', 'info');
     };
   }
 
@@ -453,22 +589,15 @@ async function openHostsModal(eventId) {
       btnSave.disabled = true;
       btnSave.textContent = 'Saving...';
       try {
-        const rows = Array.from(modal.querySelectorAll('#hostsTableBody tr'));
         const hostConfigs = [];
-
-        rows.forEach((row) => {
-          const checkbox = row.querySelector('.host-auth-checkbox');
-          if (checkbox && checkbox.checked) {
-            const memberId = row.dataset.memberId;
-            const memberCode = row.dataset.memberCode || '';
-            const fullName = row.dataset.memberName || '';
-            const stationInput = row.querySelector('.host-station-input');
-            const stationName = stationInput ? stationInput.value.trim() : 'Staff Station';
+        workingState.forEach((val, memberId) => {
+          if (val.isChecked) {
+            const m = staffMembers.find((s) => s.id === memberId);
             hostConfigs.push({
               memberId,
-              memberCode,
-              fullName,
-              stationName,
+              memberCode: m?.member_code || '',
+              fullName: m?.full_name || '',
+              stationName: val.station || 'Main Gate',
               isActive: true
             });
           }

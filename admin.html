@@ -641,8 +641,18 @@
         <button class="modal-close">&times;</button>
       </div>
 
+      <!-- Dedicated View Filter Tabs (Authorized vs All Staff) -->
+      <div class="hosts-view-switcher">
+        <button type="button" class="hosts-view-pill active" id="btnFilterAuthorizedHosts" data-mode="authorized">
+          ⭐ Assigned Attendance Takers <span class="badge badge-success" id="hostsAuthTabCount">0</span>
+        </button>
+        <button type="button" class="hosts-view-pill" id="btnFilterAllHosts" data-mode="all">
+          👥 All Staff Directory <span class="badge badge-neutral" id="hostsAllStaffTabCount">0</span>
+        </button>
+      </div>
+
       <div class="hosts-toolbar">
-        <input type="text" class="form-control hosts-search-input" id="hostsSearchInput" placeholder="🔍 Filter staff name or code..." title="Filter staff members" aria-label="Filter staff members" />
+        <input type="text" class="form-control hosts-search-input" id="hostsSearchInput" placeholder="🔍 Search by name, code, division..." title="Filter staff members" aria-label="Filter staff members" />
         <div class="hosts-quick-actions">
           <button type="button" class="btn btn-secondary btn-sm" id="btnSelectAllHosts">Select All Staff</button>
           <button type="button" class="btn btn-ghost btn-sm" id="btnDeselectAllHosts">Deselect All</button>
