@@ -202,6 +202,23 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
+-- Trigger to keep division_name on branches automatically synchronized
+CREATE OR REPLACE FUNCTION sync_branch_division_name()
+RETURNS TRIGGER AS $$
+BEGIN
+    SELECT name INTO NEW.division_name 
+    FROM divisions 
+    WHERE id = NEW.division_id;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_sync_branch_division_name ON branches;
+CREATE TRIGGER trg_sync_branch_division_name
+BEFORE INSERT OR UPDATE ON branches
+FOR EACH ROW
+EXECUTE FUNCTION sync_branch_division_name();
+
 -- ============================================================================
 -- SECURE SERVER-SIDE STORED PROCEDURE: SUBMIT ATTENDANCE (RPC)
 -- Executed with SECURITY DEFINER to safely validate against protected tables

@@ -1,14 +1,29 @@
 -- ============================================================================
 -- BATCH INSERT SCRIPT: ALL BRANCHES (110) & ALL STAFF MEMBERS (1,085)
 -- Quick Access AttendPro - Supabase PostgreSQL Database
--- Features: Includes 'division_name' in branches table for immediate visibility
---           Corrected 'Sangali' -> 'Sangli' and 'URAN' (Code 86) -> 'ULWE'
+-- Layout: 'division_name' placed directly between 'division_id' and 'code' in branches table
+-- Corrected: 'Sangali' -> 'Sangli' and 'URAN' (Code 86) -> 'ULWE'
 -- ============================================================================
 
 BEGIN;
 
--- ENSURE division_name COLUMN EXISTS ON branches
+-- STEP 0: ENSURE division_name COLUMN EXISTS DIRECTLY ON branches TABLE
 ALTER TABLE branches ADD COLUMN IF NOT EXISTS division_name VARCHAR(255);
+
+-- AUTO-POPULATE TRIGGER: Automatically fills division_name from divisions table
+CREATE OR REPLACE FUNCTION sync_branch_division_name()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.division_id IS NOT NULL THEN
+        SELECT name INTO NEW.division_name FROM divisions WHERE id = NEW.division_id;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_sync_branch_division_name ON branches;
+CREATE TRIGGER trg_sync_branch_division_name
+BEFORE INSERT OR UPDATE ON branches
+FOR EACH ROW EXECUTE FUNCTION sync_branch_division_name();
 
 -- STEP 1: INSERT ALL 8 DIVISIONS
 INSERT INTO divisions (code, name) VALUES
@@ -22,7 +37,7 @@ INSERT INTO divisions (code, name) VALUES
   ('DIV-THANE', 'Thane')
 ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name;
 
--- STEP 2: INSERT ALL 110 BRANCHES (INCLUDING division_name)
+-- STEP 2: INSERT ALL 110 BRANCHES (POPULATING division_name)
 INSERT INTO branches (division_id, division_name, code, name)
 SELECT d.id, d.name, b.code, b.name
 FROM (VALUES
@@ -1251,10 +1266,10 @@ ON CONFLICT (role, member_code) DO UPDATE SET
 COMMIT;
 
 -- ============================================================================
--- VERIFICATION CHECKS (Run to confirm record counts & division names)
+-- VERIFICATION CHECKS (Run to confirm record counts & table column preview)
 -- ============================================================================
 SELECT count(*) AS total_divisions FROM divisions;
 SELECT count(*) AS total_branches FROM branches;
 SELECT count(*) AS total_staff_members FROM members WHERE role = 'Staff';
--- Preview Branches with Division Name directly visible:
-SELECT code AS branch_code, name AS branch_name, division_name FROM branches ORDER BY division_name, name LIMIT 20;
+-- Preview Branches Table Columns: division_name sits right between division_id and code:
+SELECT id, division_id, division_name, code, name FROM branches ORDER BY division_name, name LIMIT 25;
