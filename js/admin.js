@@ -218,7 +218,7 @@ function renderEventsGrid() {
             </div>
             <div class="event-meta-row">
               <span>👥</span>
-              <span>Roles: <strong>${event.permitted_roles}</strong></span>
+              <span>Permitted Attendees: <strong>${event.permitted_roles}</strong></span>
             </div>
             <div class="event-meta-row">
               <span>🎯</span>
@@ -228,11 +228,11 @@ function renderEventsGrid() {
         </div>
 
         <div class="event-card-actions">
-          <button class="btn btn-primary btn-sm btn-view-qr" data-id="${event.id}">
+          <button class="btn btn-primary btn-sm btn-view-qr" data-id="${event.id}" title="Display static venue QR code">
             📱 Static QR
           </button>
-          <button class="btn btn-secondary btn-sm btn-manage-hosts" data-id="${event.id}" title="Manage 20+ Authorized Staff Mobile Beacons displaying rotating anti-screenshot QR codes">
-            👥 20+ Rotating Beacons
+          <button class="btn btn-secondary btn-sm btn-manage-hosts" data-id="${event.id}" title="Assign staff members who will take attendance using mobile dynamic QR beacons">
+            👥 Assign Staff (Take Attendance)
           </button>
           <button class="btn btn-secondary btn-sm btn-print-signage" data-id="${event.id}">
             🖨️ Print
@@ -321,7 +321,7 @@ async function openHostsModal(eventId) {
   const countBadge = document.getElementById('hostsSelectedCount');
 
   if (subtitleEl) {
-    subtitleEl.textContent = `Event: ${event.name} (${event.venue}) • 20+ Rotating Staff Mobile Beacons`;
+    subtitleEl.textContent = `Event: ${event.name} (${event.venue}) • Assign Staff to Take Attendance via Mobile Beacons`;
   }
   if (searchInput) searchInput.value = '';
 
