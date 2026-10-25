@@ -799,7 +799,7 @@ async function renderAttendanceTable() {
       }
 
       return `
-      <tr>
+      <tr data-record-id="${record.id}">
         <td>
           <div style="font-weight:700;color:var(--text-primary);">${escapeHtml(record.full_name || 'Unknown')}</div>
           <div style="font-size:0.75rem;font-family:monospace;color:var(--text-muted);">${record.member_code}</div>
@@ -2027,6 +2027,11 @@ function prependLiveAttendanceRow(record) {
   if (f.divisionId && f.divisionId !== 'All' && f.divisionId !== record.division_id) return;
   if (f.branchId && f.branchId !== 'All' && f.branchId !== record.branch_id) return;
 
+  // Deduplication check: do not add duplicate row if already rendered
+  if (record.id && tbody.querySelector(`tr[data-record-id="${record.id}"]`)) {
+    return;
+  }
+
   // Clear empty state row if present
   if (tbody.querySelector('.empty-state')) {
     tbody.innerHTML = '';
@@ -2053,6 +2058,9 @@ function prependLiveAttendanceRow(record) {
 
   const tr = document.createElement('tr');
   tr.className = 'row-live-highlight';
+  if (record.id) {
+    tr.setAttribute('data-record-id', record.id);
+  }
   tr.innerHTML = `
     <td>
       <div style="font-weight:700;color:var(--text-primary);">${escapeHtml(record.full_name || 'Unknown')}</div>

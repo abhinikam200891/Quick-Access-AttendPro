@@ -865,6 +865,19 @@ export const dbService = {
         if (error) {
           return { success: false, code: 'RPC_ERROR', message: error.message };
         }
+        if (data && data.success && data.data) {
+          const ticketId = data.data.ticket_id;
+          if (ticketId) {
+            this.getAttendanceRecordById(ticketId).then((fullRec) => {
+              if (fullRec) {
+                try {
+                  localStorage.setItem('attendpro_last_attendance_event', JSON.stringify({ time: Date.now(), record: fullRec }));
+                } catch (e) {}
+                broadcastNewAttendance(fullRec);
+              }
+            }).catch(() => {});
+          }
+        }
         return data;
       } catch (err) {
         console.warn('RPC invocation failed, falling back to local verification', err);
@@ -1149,18 +1162,30 @@ export const dbService = {
     const supabase = getSupabaseClient();
     if (supabase) {
       try {
+        const [divs, branches] = await Promise.all([
+          this.getDivisions(),
+          this.getBranches()
+        ]);
+        const divMap = new Map((divs || []).map((d) => [d.id, d.name]));
+        const branchMap = new Map((branches || []).map((b) => [b.id, b.name]));
+
         const buildAttendanceQuery = () => {
           let q = supabase.from('attendance').select(`
             id,
+            event_id,
+            member_id,
             check_in_time,
             latitude,
             longitude,
             distance_meters,
             verification_status,
+            check_in_mode,
+            host_member_id,
+            host_member_code,
+            host_name,
             events (id, name, venue, date),
-            members (id, role, member_code, full_name, phone_number,
-              divisions (id, name),
-              branches (id, name)
+            members:members!attendance_member_id_fkey (
+              id, role, member_code, full_name, phone_number, division_id, branch_id
             )
           `).order('check_in_time', { ascending: false });
 
@@ -1185,29 +1210,51 @@ export const dbService = {
         }
 
         if (allRecords.length > 0) {
-          // Normalize structure
-          return allRecords.map((row) => ({
-            id: row.id,
-            event_id: row.events?.id,
-            event_name: row.events?.name,
-            venue: row.events?.venue,
-            member_id: row.members?.id,
-            member_code: row.members?.member_code,
-            full_name: row.members?.full_name,
-            role: row.members?.role,
-            phone_number: row.members?.phone_number,
-            division_id: row.members?.divisions?.id,
-            division_name: row.members?.divisions?.name,
-            branch_id: row.members?.branches?.id,
-            branch_name: row.members?.branches?.name,
-            check_in_time: row.check_in_time,
-            distance_meters: row.distance_meters,
-            verification_status: row.verification_status,
-            check_in_mode: row.check_in_mode || 'ATTENDEE_SCAN',
-            host_member_id: row.host_member_id || null,
-            host_member_code: row.host_member_code || null,
-            host_name: row.host_name || null
-          }));
+          // Normalize structure with enriched division and branch names
+          let normalized = allRecords.map((row) => {
+            const mem = row.members || {};
+            return {
+              id: row.id,
+              event_id: row.events?.id || row.event_id,
+              event_name: row.events?.name || 'Event',
+              venue: row.events?.venue || '',
+              member_id: mem.id || row.member_id,
+              member_code: mem.member_code || '',
+              full_name: mem.full_name || 'Attendee',
+              role: mem.role || 'Staff',
+              phone_number: mem.phone_number || '',
+              division_id: mem.division_id || '',
+              division_name: divMap.get(mem.division_id) || 'Division',
+              branch_id: mem.branch_id || '',
+              branch_name: branchMap.get(mem.branch_id) || 'Branch',
+              check_in_time: row.check_in_time,
+              distance_meters: row.distance_meters,
+              verification_status: row.verification_status,
+              check_in_mode: row.check_in_mode || 'ATTENDEE_SCAN',
+              host_member_id: row.host_member_id || null,
+              host_member_code: row.host_member_code || null,
+              host_name: row.host_name || null
+            };
+          });
+
+          // Apply filters in JS for role, division, branch, date, mode
+          if (filters.role && filters.role !== 'All') {
+            normalized = normalized.filter((r) => r.role === filters.role);
+          }
+          if (filters.divisionId && filters.divisionId !== 'All') {
+            normalized = normalized.filter((r) => r.division_id === filters.divisionId);
+          }
+          if (filters.branchId && filters.branchId !== 'All') {
+            normalized = normalized.filter((r) => r.branch_id === filters.branchId);
+          }
+          if (filters.date) {
+            normalized = normalized.filter((r) => r.check_in_time && r.check_in_time.startsWith(filters.date));
+          }
+          if (filters.checkInMode && filters.checkInMode !== 'All') {
+            normalized = normalized.filter((r) => r.check_in_mode === filters.checkInMode);
+          }
+
+          return normalized;
         }
       } catch (e) {
         console.warn('Supabase getAttendanceRecords failed:', e);
@@ -1240,6 +1287,79 @@ export const dbService = {
       records = records.filter((r) => r.check_in_mode === filters.checkInMode);
     }
     return records;
+  },
+
+  async getAttendanceRecordById(id) {
+    if (!id) return null;
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        const [divs, branches] = await Promise.all([
+          this.getDivisions(),
+          this.getBranches()
+        ]);
+        const divMap = new Map((divs || []).map((d) => [d.id, d.name]));
+        const branchMap = new Map((branches || []).map((b) => [b.id, b.name]));
+
+        const { data, error } = await supabase
+          .from('attendance')
+          .select(`
+            id,
+            event_id,
+            member_id,
+            check_in_time,
+            latitude,
+            longitude,
+            distance_meters,
+            verification_status,
+            check_in_mode,
+            host_member_id,
+            host_member_code,
+            host_name,
+            events (id, name, venue, date),
+            members:members!attendance_member_id_fkey (
+              id, role, member_code, full_name, phone_number, division_id, branch_id
+            )
+          `)
+          .eq('id', id)
+          .maybeSingle();
+
+        if (error) {
+          console.warn('getAttendanceRecordById Supabase error:', error);
+          return null;
+        }
+        if (data) {
+          const mem = data.members || {};
+          return {
+            id: data.id,
+            event_id: data.events?.id || data.event_id,
+            event_name: data.events?.name || 'Event',
+            venue: data.events?.venue || '',
+            member_id: mem.id || data.member_id,
+            member_code: mem.member_code || '',
+            full_name: mem.full_name || 'Attendee',
+            role: mem.role || 'Staff',
+            phone_number: mem.phone_number || '',
+            division_id: mem.division_id || '',
+            division_name: divMap.get(mem.division_id) || 'Division',
+            branch_id: mem.branch_id || '',
+            branch_name: branchMap.get(mem.branch_id) || 'Branch',
+            check_in_time: data.check_in_time,
+            distance_meters: data.distance_meters,
+            verification_status: data.verification_status,
+            check_in_mode: data.check_in_mode || 'ATTENDEE_SCAN',
+            host_member_id: data.host_member_id || null,
+            host_member_code: data.host_member_code || null,
+            host_name: data.host_name || null
+          };
+        }
+      } catch (err) {
+        console.warn('getAttendanceRecordById error:', err);
+      }
+      if (this.isUsingSupabase()) return null;
+    }
+    const local = mockDb.get('attendance') || [];
+    return local.find((r) => r.id === id) || null;
   },
 
   // 4B. EVENT AUTHORIZED HOSTS (MOBILE BEACONS WITH DEVICE-LOCK)
@@ -1876,35 +1996,60 @@ export const dbService = {
     const supabase = getSupabaseClient();
     if (supabase) {
       try {
+        const [divs, branches] = await Promise.all([
+          this.getDivisions(),
+          this.getBranches()
+        ]);
+        const divMap = new Map((divs || []).map((d) => [d.id, d.name]));
+        const branchMap = new Map((branches || []).map((b) => [b.id, b.name]));
+
         const { data, error } = await supabase.from('attendance').select(`
-          id, check_in_time, latitude, longitude, distance_meters, verification_status,
+          id,
+          event_id,
+          member_id,
+          check_in_time,
+          latitude,
+          longitude,
+          distance_meters,
+          verification_status,
+          check_in_mode,
+          host_member_id,
+          host_member_code,
+          host_name,
           events (id, name, venue, date),
-          members (id, role, member_code, full_name, phone_number,
-            divisions (id, name),
-            branches (id, name)
+          members:members!attendance_member_id_fkey (
+            id, role, member_code, full_name, phone_number, division_id, branch_id
           )
         `).eq('id', id).single();
+
         if (!error && data) {
+          const mem = data.members || {};
           return {
             id: data.id,
-            event_id: data.events?.id,
-            event_name: data.events?.name,
-            venue: data.events?.venue,
-            member_id: data.members?.id,
-            member_code: data.members?.member_code,
-            full_name: data.members?.full_name,
-            role: data.members?.role,
-            phone_number: data.members?.phone_number,
-            division_id: data.members?.divisions?.id,
-            division_name: data.members?.divisions?.name,
-            branch_id: data.members?.branches?.id,
-            branch_name: data.members?.branches?.name,
+            event_id: data.events?.id || data.event_id,
+            event_name: data.events?.name || 'Event',
+            venue: data.events?.venue || '',
+            member_id: mem.id || data.member_id,
+            member_code: mem.member_code || '',
+            full_name: mem.full_name || 'Attendee',
+            role: mem.role || 'Staff',
+            phone_number: mem.phone_number || '',
+            division_id: mem.division_id || '',
+            division_name: divMap.get(mem.division_id) || 'Division',
+            branch_id: mem.branch_id || '',
+            branch_name: branchMap.get(mem.branch_id) || 'Branch',
             check_in_time: data.check_in_time,
             distance_meters: data.distance_meters,
-            verification_status: data.verification_status
+            verification_status: data.verification_status,
+            check_in_mode: data.check_in_mode || 'ATTENDEE_SCAN',
+            host_member_id: data.host_member_id || null,
+            host_member_code: data.host_member_code || null,
+            host_name: data.host_name || null
           };
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('getAttendanceRecordById error:', e);
+      }
     }
     const records = mockDb.get('attendance');
     return records.find((r) => r.id === id) || null;
@@ -1945,11 +2090,18 @@ export const dbService = {
             'postgres_changes',
             { event: 'INSERT', schema: 'public', table: 'attendance' },
             async (payload) => {
-              const enriched = await this.getAttendanceRecordById(payload.new.id) || payload.new;
-              callback(enriched);
+              try {
+                const enriched = (await this.getAttendanceRecordById(payload.new?.id)) || payload.new;
+                callback(enriched);
+              } catch (e) {
+                console.warn('Realtime attendance enrichment error:', e);
+                callback(payload.new);
+              }
             }
           )
-          .subscribe();
+          .subscribe((status) => {
+            console.log('Supabase Realtime attendance channel status:', status);
+          });
       } catch (err) {
         console.warn('Supabase Realtime subscription error:', err);
       }
