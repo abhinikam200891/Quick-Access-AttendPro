@@ -9,12 +9,16 @@ const STORAGE_KEY_URL = 'qr_attendance_supabase_url';
 const STORAGE_KEY_KEY = 'qr_attendance_supabase_anon_key';
 const STORAGE_KEY_MODE = 'qr_attendance_run_mode'; // 'supabase' | 'demo'
 
+// Pre-configured default cloud database endpoint for all mobile attendees & scanning devices
+const DEFAULT_SUPABASE_URL = 'https://cmkdskffzmnrqkszmvto.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_Ev3T1eRRoECboiRkJ8bAxQ_uCi0CHr8';
+
 // Pre-configured environment variables or stored settings
 let supabaseClient = null;
 
 export function getSupabaseConfig() {
-  const envUrl = import.meta.env?.VITE_SUPABASE_URL || '';
-  const envKey = import.meta.env?.VITE_SUPABASE_ANON_KEY || '';
+  const envUrl = import.meta.env?.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+  const envKey = import.meta.env?.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY;
 
   const storedUrl = localStorage.getItem(STORAGE_KEY_URL) || envUrl;
   const storedKey = localStorage.getItem(STORAGE_KEY_KEY) || envKey;

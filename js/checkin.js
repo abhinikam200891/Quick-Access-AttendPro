@@ -107,8 +107,12 @@ function showNoActiveEventState() {
   const errorTitle = document.getElementById('errorBannerTitle');
   const errorMsg = document.getElementById('errorBannerMessage');
 
-  if (loadingOverlay) loadingOverlay.style.display = 'none';
+  if (loadingOverlay) {
+    loadingOverlay.classList.add('is-hidden');
+    loadingOverlay.style.display = 'none';
+  }
   if (errorCard) {
+    errorCard.classList.remove('is-hidden');
     errorCard.style.display = 'block';
     if (errorTitle) errorTitle.textContent = 'No Active Event';
     if (errorMsg) errorMsg.textContent = 'There is currently no active event scheduled. Please create or activate an event in the Admin Portal.';
@@ -143,7 +147,8 @@ async function loadEventAndBootstrap() {
           if (beaconBanner) {
             beaconBanner.classList.remove('is-hidden');
             if (beaconDetails) {
-              beaconDetails.innerHTML = `<strong>${escapeHtml(host.member_name)}</strong> (${escapeHtml(host.member_code)}) &bull; ${escapeHtml(host.station_name || 'Staff Beacon')}`;
+              const hostName = host.full_name || host.member_name || 'Staff Beacon';
+              beaconDetails.innerHTML = `<strong>${escapeHtml(hostName)}</strong> (${escapeHtml(host.member_code)}) &bull; ${escapeHtml(host.station_name || 'Staff Beacon')}`;
             }
           }
         }
@@ -163,11 +168,21 @@ async function loadEventAndBootstrap() {
       updateGpsIndicator('verified', 'GPS check optional for this event');
     }
 
-    if (loadingOverlay) loadingOverlay.style.display = 'none';
-    if (checkinFormContainer) checkinFormContainer.style.display = 'block';
+    if (loadingOverlay) {
+      loadingOverlay.classList.add('is-hidden');
+      loadingOverlay.style.display = 'none';
+    }
+    if (checkinFormContainer) {
+      checkinFormContainer.classList.remove('is-hidden');
+      checkinFormContainer.style.display = 'block';
+    }
   } catch (err) {
-    if (loadingOverlay) loadingOverlay.style.display = 'none';
+    if (loadingOverlay) {
+      loadingOverlay.classList.add('is-hidden');
+      loadingOverlay.style.display = 'none';
+    }
     if (errorCard) {
+      errorCard.classList.remove('is-hidden');
       errorCard.style.display = 'block';
       document.getElementById('errorBannerTitle').textContent = 'Event Validation Failed';
       document.getElementById('errorBannerMessage').textContent = err.message;
@@ -711,8 +726,14 @@ function showAttendancePass(data) {
   const formCard = document.getElementById('checkinFormContainer');
   const passContainer = document.getElementById('passTicketContainer');
 
-  if (formCard) formCard.style.display = 'none';
-  if (passContainer) passContainer.style.display = 'block';
+  if (formCard) {
+    formCard.classList.add('is-hidden');
+    formCard.style.display = 'none';
+  }
+  if (passContainer) {
+    passContainer.classList.remove('is-hidden');
+    passContainer.style.display = 'block';
+  }
 
   document.getElementById('passMemberName').textContent = data.full_name;
   document.getElementById('passMemberCode').textContent = data.member_code;
