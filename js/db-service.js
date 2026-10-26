@@ -1686,6 +1686,11 @@ export const dbService = {
     const currentEventHosts = supabase
       ? await this.getEventAuthorizedHosts(eventId)
       : existing.filter((h) => h.event_id === eventId);
+    const existingHostMap = new Map(currentEventHosts.map((h) => [h.member_id, h]));
+
+    const members = await this.getMembers();
+    const memberMap = new Map(members.map((m) => [m.id, m]));
+
     let existingKeyMap = new Map();
     try {
       existingKeyMap = await this.getEventHostKeys(eventId);
