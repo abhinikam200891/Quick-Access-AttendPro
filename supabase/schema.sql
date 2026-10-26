@@ -134,6 +134,7 @@ CREATE TABLE IF NOT EXISTS event_authorized_hosts (
 ALTER TABLE event_authorized_hosts ADD COLUMN IF NOT EXISTS device_id VARCHAR(100) DEFAULT NULL;
 ALTER TABLE event_authorized_hosts ADD COLUMN IF NOT EXISTS device_registered_at TIMESTAMPTZ DEFAULT NULL;
 ALTER TABLE event_authorized_hosts ADD COLUMN IF NOT EXISTS host_secret VARCHAR(64) NOT NULL DEFAULT encode(gen_random_bytes(32), 'hex');
+UPDATE event_authorized_hosts SET host_secret = encode(gen_random_bytes(32), 'hex') WHERE host_secret IS NULL OR host_secret = '';
 
 -- 8B. SCAN TICKETS: a verified scan of a host's rotating QR, redeemable once within 10 minutes.
 -- Lets the attendee fill the form after scanning while keeping the QR itself valid for only ~60s.

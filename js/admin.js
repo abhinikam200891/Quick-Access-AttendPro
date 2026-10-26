@@ -868,9 +868,15 @@ async function openHostsModal(eventId) {
         });
 
         await dbService.authorizeEventHosts(event.id, hostConfigs);
-        showToast(`Saved ${hostConfigs.length} attendance taker${hostConfigs.length === 1 ? '' : 's'}.`, 'success');
-        modal.classList.remove('active');
-        await refreshAllData();
+        // Reload host keys so the private links become immediately active in the modal
+        [authorizedHosts, hostKeys] = await Promise.all([
+          dbService.getEventAuthorizedHosts(eventId),
+          dbService.getEventHostKeys(eventId)
+        ]);
+        currentMode = 'authorized';
+        renderRows(searchInput?.value || '');
+        showToast(`Saved! You can now copy links or show QR codes for your ${hostConfigs.length} attendance taker${hostConfigs.length === 1 ? '' : 's'}.`, 'success');
+        refreshAllData();
       } catch (err) {
         showToast('Failed to save authorized hosts: ' + err.message, 'error');
       } finally {

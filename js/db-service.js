@@ -1686,10 +1686,12 @@ export const dbService = {
     const currentEventHosts = supabase
       ? await this.getEventAuthorizedHosts(eventId)
       : existing.filter((h) => h.event_id === eventId);
-    const existingHostMap = new Map(currentEventHosts.map((h) => [h.member_id, h]));
-
-    const members = await this.getMembers();
-    const memberMap = new Map(members.map((m) => [m.id, m]));
+    let existingKeyMap = new Map();
+    try {
+      existingKeyMap = await this.getEventHostKeys(eventId);
+    } catch (e) {
+      console.warn('Could not pre-fetch existing host keys:', e);
+    }
 
     const newHosts = hostSelections.map((sel, idx) => {
       const member = memberMap.get(sel.memberId);
@@ -1697,6 +1699,7 @@ export const dbService = {
       const name = sel.fullName || member?.full_name || 'Staff Member';
       const prevHost = existingHostMap.get(sel.memberId);
       const randomSecret = Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
+      const hostSecret = existingKeyMap.get(sel.memberId) || prevHost?.host_secret || randomSecret;
 
       return {
         id: sel.id || prevHost?.id || crypto.randomUUID(),
@@ -1705,7 +1708,7 @@ export const dbService = {
         member_code: code,
         full_name: name,
         station_name: sel.stationName || prevHost?.station_name || `Beacon Station #${idx + 1}`,
-        host_secret: prevHost?.host_secret || randomSecret,
+        host_secret: hostSecret,
         is_active: sel.isActive !== undefined ? sel.isActive : true,
         device_id: prevHost?.device_id || null,
         device_registered_at: prevHost?.device_registered_at || null,
@@ -1718,13 +1721,13 @@ export const dbService = {
     }
 
     if (supabase) {
-      // Upsert keeps each existing host's host_secret (and so their beacon link) and device lock;
-      // new hosts get a fresh secret from the column default.
+      // Upsert saves station, active status, and guarantees host_secret is never NULL
       if (newHosts.length > 0) {
         const upsertPayload = newHosts.map((h) => ({
           event_id: h.event_id,
           member_id: h.member_id,
           station_name: h.station_name,
+          host_secret: h.host_secret,
           is_active: h.is_active,
           updated_at: new Date().toISOString()
         }));
