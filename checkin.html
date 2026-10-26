@@ -27,7 +27,7 @@
     </div>
     <div class="checkin-topbar-actions">
       <button type="button" class="view-toggle-btn" id="btnCheckinCameraScan" title="Scan a staff QR code with the camera">
-        <span aria-hidden="true">📷</span> <span class="btn-install-text">Scan QR</span>
+        <span aria-hidden="true"><i data-lucide="camera"></i></span> <span class="btn-install-text">Scan QR</span>
       </button>
     </div>
   </header>
@@ -43,14 +43,14 @@
     <!-- 3. ERROR BANNER (If event is invalid or inactive) -->
     <div id="errorBannerCard" class="error-banner-card is-hidden">
       <div class="error-banner-icon">
-        ⚠️
+        <i data-lucide="triangle-alert"></i>
       </div>
       <h2 id="errorBannerTitle" class="error-banner-title">Unable to Load Event</h2>
       <p id="errorBannerMessage" class="error-banner-desc">
         The event could not be verified.
       </p>
       <div style="display:flex; gap:10px; margin-top:16px;">
-        <button type="button" class="btn btn-primary btn-block" id="btnErrorScanQr">📷 Scan with Camera</button>
+        <button type="button" class="btn btn-primary btn-block" id="btnErrorScanQr"><i data-lucide="camera"></i> Scan with Camera</button>
         <a href="/index.html" class="btn btn-secondary btn-block">Return to Home</a>
       </div>
     </div>
@@ -58,17 +58,8 @@
     <!-- 4. MAIN CHECK-IN FORM CONTAINER -->
     <div id="checkinFormContainer" class="is-hidden">
       <!-- Header Banner with 1. Company Logo & Name, then 2. Event Name & Venue Details -->
+      <!-- Event name and venue (the brand is already in the top bar) -->
       <header class="portal-header">
-        <!-- 1. Company Logo & Company Name at very top of attendance screen -->
-        <div class="company-brand-header">
-          <img src="/assets/logo.png" alt="Quick Access AttendPro Logo" class="company-logo" />
-          <div class="company-brand-info">
-            <div class="company-name">Quick Access AttendPro</div>
-            <div class="company-tagline">Official Attendance Portal</div>
-          </div>
-        </div>
-
-        <!-- 2. Below that: Event Name and Venue Details -->
         <div class="event-info-section">
           <h1 class="event-display-name" id="eventHeadingName">Loading Event...</h1>
 
@@ -115,10 +106,10 @@
             <label class="form-label">What are you recording? <span class="required">*</span></label>
             <div class="role-segmented-control">
               <button type="button" class="role-option-btn active" id="actionBtnCheckIn">
-                <span>➡️</span> Check In
+                <span><i data-lucide="log-in"></i></span> Check In
               </button>
               <button type="button" class="role-option-btn" id="actionBtnCheckOut">
-                <span>⬅️</span> Check Out
+                <span><i data-lucide="log-out"></i></span> Check Out
               </button>
             </div>
           </div>
@@ -128,10 +119,10 @@
             <label class="form-label">Select Your Role <span class="required">*</span></label>
             <div class="role-segmented-control">
               <button type="button" class="role-option-btn active" id="roleBtnStaff">
-                <span>👔</span> Staff
+                <span><i data-lucide="briefcase"></i></span> Staff
               </button>
               <button type="button" class="role-option-btn" id="roleBtnAgent">
-                <span>🤝</span> Agent
+                <span><i data-lucide="handshake"></i></span> Agent
               </button>
             </div>
           </div>
@@ -172,7 +163,7 @@
               <ul id="personResults" class="person-results is-hidden" role="listbox" aria-labelledby="personLabel"></ul>
             </div>
             <div class="person-selected is-hidden" id="personSelected">
-              <span class="person-selected-check" aria-hidden="true">✓</span>
+              <span class="person-selected-check" aria-hidden="true"><i data-lucide="check"></i></span>
               <span id="personSelectedText" class="person-selected-text"></span>
               <button type="button" class="person-change-btn" id="btnPersonChange">Change</button>
             </div>
@@ -210,7 +201,7 @@
               </div>
             </div>
             <button type="button" class="btn btn-ghost btn-sm btn-refresh-gps" id="btnRetryGps">
-              <span aria-hidden="true">🔄</span> Retry GPS
+              <span aria-hidden="true"><i data-lucide="refresh-cw"></i></span> Retry GPS
             </button>
           </div>
 
@@ -218,7 +209,7 @@
           <div class="geofence-map-wrapper is-hidden" id="checkinRadarMapWrapper" style="margin-top: 10px; margin-bottom: 16px;">
             <div class="map-toolbar">
               <span style="font-weight:700; color:#1e293b; display:inline-flex; align-items:center; gap:6px;">
-                <span>🗺️</span> Venue Geofence Radar
+                <span><i data-lucide="map"></i></span> Venue Geofence Radar
               </span>
               <span class="map-status-pill inside" id="radarStatusPill"></span>
             </div>
@@ -299,10 +290,10 @@
 
           <div class="pass-actions-row">
             <button type="button" class="btn btn-primary" id="btnDownloadPassImage" title="Download verified attendance ticket as PNG image">
-              💾 Save Image
+              <i data-lucide="save"></i> Save Image
             </button>
             <button type="button" class="btn btn-secondary" id="btnSharePassTicket" title="Share your verified attendance via WhatsApp or Apps">
-              📲 Share Pass
+              <i data-lucide="smartphone"></i> Share Pass
             </button>
           </div>
         </div>
@@ -314,19 +305,19 @@
   <div class="modal-backdrop" id="rejectionModal">
     <div class="modal-card rejection-card">
       <div class="modal-body rejection-card-body">
-        <div class="rejection-card-icon">
-          ✕
+        <div class="rejection-card-icon" id="rejectionIcon">
+          <i data-lucide="x"></i>
         </div>
-        <h3 class="rejection-card-title">Couldn't Record Your Attendance</h3>
+        <h3 class="rejection-card-title" id="rejectionTitle">Couldn't Record Your Attendance</h3>
         <p id="rejectionMessageText" class="rejection-card-msg">
           Validation failed.
         </p>
         <!-- Shown for problems a new scan or a fresh GPS reading can fix -->
         <button type="button" class="btn btn-primary btn-block is-hidden" id="btnRejectionScanAgain">
-          📷 Scan Again
+          <i data-lucide="camera"></i> Scan Again
         </button>
         <button type="button" class="btn btn-primary btn-block is-hidden" id="btnRejectionRetryGps">
-          🔄 Retry GPS
+          <i data-lucide="refresh-cw"></i> Retry GPS
         </button>
         <button type="button" class="btn btn-secondary btn-block" id="btnRejectionClose" style="margin-top: 8px;">
           Review &amp; Try Again
@@ -337,6 +328,7 @@
 
   <!-- Check-in Controller Bootstrap -->
   <script type="module">
+    import '/js/icons.js';
     import { initCheckInPortal } from '/js/checkin.js';
     import { initDesktopInstall } from '/js/pwa-install.js';
     document.addEventListener('DOMContentLoaded', () => {

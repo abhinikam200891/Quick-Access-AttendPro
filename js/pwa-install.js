@@ -69,7 +69,7 @@ function markInstallButtonsReady() {
 function markInstallButtonsInstalled() {
   const buttons = document.querySelectorAll('.btn-install-app');
   buttons.forEach((btn) => {
-    btn.innerHTML = '✅ Desktop App';
+    btn.innerHTML = '<i data-lucide="circle-check"></i> Desktop App';
     btn.disabled = true;
     btn.title = 'Quick Access AttendPro is installed as desktop application';
   });
@@ -154,7 +154,7 @@ function showInstallModal(alreadyInstalled = false) {
           <div style="display:flex;align-items:flex-start;gap:10px;">
             <span style="background:#e0e7ff;color:#4338ca;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.75rem;flex-shrink:0;">1</span>
             <div>
-              Look for the <strong>Install App icon (💻 or ➕)</strong> on the right side of your browser address bar.
+              Look for the <strong>Install App icon (<i data-lucide="monitor"></i> or <i data-lucide="plus"></i>)</strong> on the right side of your browser address bar.
             </div>
           </div>
           <div style="display:flex;align-items:flex-start;gap:10px;">
@@ -175,7 +175,7 @@ function showInstallModal(alreadyInstalled = false) {
       <div style="display:flex;gap:10px;justify-content:flex-end;">
         <button type="button" class="btn btn-secondary btn-close-install-modal">Close</button>
         <button type="button" class="btn btn-primary" id="btnTriggerNativeInstall">
-          ⚡ Try One-Click Install
+          <i data-lucide="zap"></i> Try One-Click Install
         </button>
       </div>
     `;
@@ -198,7 +198,7 @@ function showInstallModal(alreadyInstalled = false) {
           markInstallButtonsInstalled();
         }
       } else {
-        alert('Please click the Install icon (💻 / ➕) in your browser address bar or browser menu (⋮) -> "Install Quick Access AttendPro".');
+        alert('Please click the Install icon in your browser address bar or browser menu (⋮) -> "Install Quick Access AttendPro".');
       }
     };
   }

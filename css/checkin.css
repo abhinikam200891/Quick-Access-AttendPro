@@ -322,6 +322,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
+  min-height: 48px;
   padding: 12px 14px;
   border: none;
   background: transparent;
@@ -930,8 +931,10 @@
 }
 
 .btn-refresh-gps {
-  padding: 4px 8px;
-  font-size: 0.75rem;
+  min-height: 44px;
+  padding: 6px 12px;
+  font-size: 0.8125rem;
+  flex-shrink: 0;
 }
 
 .spinner-hidden {
@@ -1001,6 +1004,16 @@
   color: var(--text-secondary);
   line-height: 1.5;
   margin-bottom: 24px;
+}
+
+/* Same modal used as a confirmation (already checked in) */
+.rejection-card.is-success .rejection-card-icon {
+  background: var(--accent-emerald-light, #d1fae5);
+  color: var(--accent-emerald, #059669);
+}
+
+.rejection-card.is-success .rejection-card-title {
+  color: #047857;
 }
 
 .is-hidden {

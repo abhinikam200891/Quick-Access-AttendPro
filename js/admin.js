@@ -82,6 +82,7 @@ function formatDate(isoDate) {
 let isPortalInitialized = false;
 
 export async function initAdminPortal() {
+  setupAccountMenu();
   await initAdminAuth({
     onLoginSuccess: async (user) => {
       if (!isPortalInitialized) {
@@ -102,6 +103,39 @@ export async function initAdminPortal() {
   });
 }
 
+/**
+ * Account drop-down in the top bar (Settings, Install App, Sign Out)
+ */
+function setupAccountMenu() {
+  const trigger = document.getElementById('btnAccountMenu');
+  const menu = document.getElementById('accountMenu');
+  if (!trigger || !menu) return;
+
+  const setOpen = (open) => {
+    menu.classList.toggle('is-hidden', !open);
+    trigger.setAttribute('aria-expanded', String(open));
+    if (open) menu.querySelector('.account-menu-item')?.focus();
+  };
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setOpen(menu.classList.contains('is-hidden'));
+  });
+  // Any item closes the menu; its own click handler still runs
+  menu.addEventListener('click', (e) => {
+    if (e.target.closest('.account-menu-item')) setOpen(false);
+  });
+  document.addEventListener('click', (e) => {
+    if (!menu.classList.contains('is-hidden') && !e.target.closest('#accountMenuWrap')) setOpen(false);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !menu.classList.contains('is-hidden')) {
+      setOpen(false);
+      trigger.focus();
+    }
+  });
+}
+
 function updateEnvBadge() {
   const config = getSupabaseConfig();
   const badge = document.getElementById('envBadge');
@@ -110,12 +144,17 @@ function updateEnvBadge() {
 
   if (!badge) return;
 
+  // Short label for phones, same pattern as the tab labels
+  const setLabel = (full, short) => {
+    label.innerHTML = `<span class="env-label-full">${full}</span><span class="env-label-short">${short}</span>`;
+    badge.title = full;
+  };
   if (config.mode === 'supabase' && config.isConfigured) {
     dot.className = 'env-indicator-dot';
-    label.textContent = 'Supabase Connected';
+    setLabel('Supabase Connected', 'Live');
   } else {
     dot.className = 'env-indicator-dot demo';
-    label.textContent = 'Test Mode (Local Storage)';
+    setLabel('Test Mode (Local Storage)', 'Test mode');
   }
 }
 
@@ -222,7 +261,7 @@ function renderEventsGrid() {
   if (state.events.length === 0) {
     container.innerHTML = `
       <div class="empty-state" style="grid-column: 1 / -1;">
-        <div class="empty-state-icon">📅</div>
+        <div class="empty-state-icon"><i data-lucide="calendar"></i></div>
         <div class="empty-state-title">No Events Created Yet</div>
         <p>Click "Create New Event" above to schedule your first QR-coded attendance session.</p>
       </div>
@@ -236,6 +275,7 @@ function renderEventsGrid() {
       const statusBadge = event.is_active
         ? '<span class="badge badge-success">Active</span>'
         : '<span class="badge badge-neutral">Inactive</span>';
+      const checkedIn = state.attendance.filter((a) => a.event_id === event.id).length;
 
       return `
       <div class="event-card ${!event.is_active ? 'inactive' : ''}">
@@ -248,30 +288,34 @@ function renderEventsGrid() {
             ${statusBadge}
           </div>
 
+          <div class="event-checkin-count">
+            <strong>${checkedIn}</strong> checked in
+          </div>
+
           <div class="event-meta">
             <div class="event-meta-row">
-              <span>📍</span>
+              <span><i data-lucide="map-pin"></i></span>
               <strong>${escapeHtml(event.venue)}</strong>
             </div>
             <div class="event-meta-row">
-              <span>🗓️</span>
+              <span><i data-lucide="calendar-days"></i></span>
               <span>${formatDate(event.date)} &bull; ${formatWindow(event)}</span>
             </div>
             <div class="event-meta-row">
-              <span>👥</span>
+              <span><i data-lucide="users"></i></span>
               <span>Permitted Attendees: <strong>${event.permitted_roles}</strong></span>
             </div>
             <div class="event-meta-row">
-              <span>🎯</span>
+              <span><i data-lucide="crosshair"></i></span>
               <span>Radius: <strong>${event.radius_meters}m</strong> ${event.location_required ? '(GPS Enforced)' : '(GPS Optional)'}</span>
             </div>
             <div class="event-meta-row">
-              <span>⏰</span>
+              <span><i data-lucide="alarm-clock"></i></span>
               <span>Late after <strong>${event.late_grace_minutes ?? 15} min</strong> &bull; Check-out ${event.checkout_enabled ? '<strong>on</strong>' : 'off'}</span>
             </div>
             ${event.location_required && !hasVenueCoordinates(event) ? `
             <div class="event-meta-row" style="color:var(--accent-rose);">
-              <span>⚠️</span>
+              <span><i data-lucide="triangle-alert"></i></span>
               <span>Venue GPS not set: check-ins will be rejected</span>
             </div>` : ''}
           </div>
@@ -279,13 +323,13 @@ function renderEventsGrid() {
 
         <div class="event-card-actions">
           <button class="btn btn-primary btn-sm btn-manage-hosts" data-id="${event.id}" title="Assign staff members who will take attendance using mobile rotating QR beacons">
-            👥 Attendance Takers
+            <i data-lucide="users"></i> Attendance Takers
           </button>
           <button class="btn btn-secondary btn-sm btn-edit-event" data-id="${event.id}" title="Edit event date, time, venue, permitted roles, and GPS geofence radius">
-            ✏️ Edit
+            <i data-lucide="pencil"></i> Edit
           </button>
           <button class="btn btn-ghost btn-sm btn-toggle-status" data-id="${event.id}">
-            ${event.is_active ? '⏸️ Deactivate' : '▶️ Activate'}
+            ${event.is_active ? '<i data-lucide="pause"></i> Deactivate' : '<i data-lucide="play"></i> Activate'}
           </button>
         </div>
       </div>
@@ -353,10 +397,10 @@ function updateEventWindowHint() {
   const end = document.getElementById('editEventEndTime').value;
   const error = validateEventTimes(start, end);
   if (error) {
-    hint.textContent = start && end ? `⚠️ ${error}` : '';
+    hint.textContent = start && end ? `${error}` : '';
     hint.style.color = 'var(--accent-rose)';
   } else if (isOvernight({ start_time: start, end_time: end })) {
-    hint.textContent = `🌙 Overnight event: check-in closes at ${end} on the next day.`;
+    hint.textContent = `Overnight event: check-in closes at ${end} on the next day.`;
     hint.style.color = 'var(--text-secondary)';
   } else {
     hint.textContent = '';
@@ -374,8 +418,8 @@ function openEventForm(eventId = null) {
   if (!modal) return;
   const isCreate = !event;
 
-  document.getElementById('eventModalTitle').textContent = isCreate ? '📅 Create Attendance Event' : '✏️ Edit Attendance Event';
-  document.getElementById('btnSaveEditedEvent').textContent = isCreate ? 'Create Event' : '💾 Save Changes';
+  document.getElementById('eventModalTitle').textContent = isCreate ? 'Create Attendance Event' : 'Edit Attendance Event';
+  document.getElementById('btnSaveEditedEvent').textContent = isCreate ? 'Create Event' : 'Save Changes';
   document.getElementById('btnDeleteFromEditModal').classList.toggle('is-hidden', isCreate);
 
   document.getElementById('editEventId').value = event?.id || '';
@@ -570,13 +614,13 @@ async function openHostsModal(eventId) {
           tbody.innerHTML = `
             <tr>
               <td colspan="5" style="text-align:center; padding: 40px 16px;">
-                <div style="font-size: 2.2rem; margin-bottom: 8px;">👥</div>
+                <div style="font-size: 2.2rem; margin-bottom: 8px;"><i data-lucide="users"></i></div>
                 <div style="font-weight: 700; font-size: 1rem; color: var(--text-primary); margin-bottom: 4px;">No Attendance Takers Assigned Yet</div>
                 <p style="color: var(--text-secondary); max-width: 420px; margin: 0 auto 16px; font-size: 0.85rem;">
                   No staff members have been authorized for this event yet. Browse the full staff directory to assign staff members.
                 </p>
                 <button type="button" class="btn btn-primary btn-sm" id="btnEmptyBrowseAll">
-                  👥 Browse All Staff Directory (${staffMembers.length})
+                  <i data-lucide="users"></i> Browse All Staff Directory (${staffMembers.length})
                 </button>
               </td>
             </tr>
@@ -592,7 +636,7 @@ async function openHostsModal(eventId) {
           tbody.innerHTML = `
             <tr>
               <td colspan="5" style="text-align:center; padding: 32px 16px; color: var(--text-secondary);">
-                🔍 No assigned attendance takers match "<strong>${escapeHtml(ft)}</strong>".
+                <i data-lucide="search"></i> No assigned attendance takers match "<strong>${escapeHtml(ft)}</strong>".
               </td>
             </tr>
           `;
@@ -601,7 +645,7 @@ async function openHostsModal(eventId) {
         tbody.innerHTML = `
           <tr>
             <td colspan="5" style="text-align:center; padding: 32px 16px; color: var(--text-secondary);">
-              🔍 No staff members match "<strong>${escapeHtml(ft)}</strong>".
+              <i data-lucide="search"></i> No staff members match "<strong>${escapeHtml(ft)}</strong>".
             </td>
           </tr>
         `;
@@ -622,10 +666,10 @@ async function openHostsModal(eventId) {
         const linkActions = hostLink
           ? `
               <button type="button" class="btn btn-secondary btn-sm btn-show-host-qr" data-link="${escapeHtml(hostLink)}" data-name="${escapeHtml(m.full_name)}" data-station="${escapeHtml(station)}" title="Show the private link as a QR for this attendance taker to scan with their own phone">
-                📱 Show QR
+                <i data-lucide="smartphone"></i> Show QR
               </button>
               <button type="button" class="btn btn-ghost btn-sm btn-copy-host-link" data-link="${escapeHtml(hostLink)}" title="Copy the private link to send to this attendance taker only">
-                📋 Copy Link
+                <i data-lucide="copy"></i> Copy Link
               </button>`
           : (isChecked ? '<span class="badge badge-neutral" title="Save to create this host\'s private beacon link" style="font-size:0.7rem;">Save to get link</span>' : '');
 
@@ -649,14 +693,14 @@ async function openHostsModal(eventId) {
               ${isChecked ? linkActions : ''}
               ${isChecked ? (stateObj.deviceId ? `
                 <button type="button" class="btn btn-ghost btn-sm btn-reset-device-lock" data-member-id="${m.id}" data-member-name="${escapeHtml(m.full_name)}" title="Phone is currently locked to this beacon. Click to reset so staff can bind another phone.">
-                  🔓 Reset Device Lock
+                  <i data-lucide="lock-open"></i> Reset Device Lock
                 </button>
               ` : `
-                <span class="badge badge-secondary" title="No phone bound yet" style="font-size:0.7rem; padding: 2px 6px;">⏳ Unbound</span>
+                <span class="badge badge-secondary" title="No phone bound yet" style="font-size:0.7rem; padding: 2px 6px;"><i data-lucide="hourglass"></i> Unbound</span>
               `) : ''}
               ${isChecked ? `
                 <button type="button" class="btn btn-ghost btn-sm btn-quick-unassign" data-member-id="${m.id}" title="Remove this staff member from taking attendance" style="color:var(--accent-rose);">
-                  ❌ Remove
+                  <i data-lucide="circle-x"></i> Remove
                 </button>
               ` : ''}
             </td>
@@ -715,7 +759,7 @@ async function openHostsModal(eventId) {
         if (!cleared) {
           // Leave the lock shown as it is: the phone is still bound
           btn.disabled = false;
-          btn.textContent = '🔓 Reset Device Lock';
+          btn.textContent = 'Reset Device Lock';
           showToast(`Could not reset the device lock for ${memberName}. Check your connection and try again.`, 'error');
           return;
         }
@@ -905,15 +949,15 @@ function getFilteredAttendance() {
 
 function checkInModeBadge(record) {
   if (record.check_in_mode === 'HOST_SELF') {
-    return '<span class="badge badge-mode-self" title="Attendance taker marked their own attendance">⭐ Attendance Taker (Self)</span>';
+    return '<span class="badge badge-mode-self" title="Attendance taker marked their own attendance"><i data-lucide="star"></i> Attendance Taker (Self)</span>';
   }
   if (record.check_in_mode === 'ATTENDEE_SCAN') {
     const hName = escapeHtml(record.host_name || record.host_member_code || 'Staff');
     const hStation = record.host_station ? ` • ${escapeHtml(record.host_station)}` : '';
-    return `<span class="badge badge-mode-scan" title="Scanned via Host: ${hName}">📲 ${hName}${hStation}</span>`;
+    return `<span class="badge badge-mode-scan" title="Scanned via Host: ${hName}"><i data-lucide="smartphone"></i> ${hName}${hStation}</span>`;
   }
   if (record.check_in_mode === 'ADMIN_MANUAL') {
-    return '<span class="badge badge-neutral" title="Marked present by an administrator">✍️ Manual</span>';
+    return '<span class="badge badge-neutral" title="Marked present by an administrator"><i data-lucide="pen-line"></i> Manual</span>';
   }
   return '<span class="badge badge-mode-venue">Legacy Static QR</span>';
 }
@@ -928,7 +972,7 @@ function verificationBadges(record) {
   const notes = record.verification_notes ? ` title="${escapeHtml(record.verification_notes)}"` : '';
   let badge = '<span class="badge badge-success">VERIFIED</span>';
   if (record.verification_status === 'FLAGGED') {
-    badge = `<span class="badge badge-warning"${notes}>🔎 FLAGGED</span>`
+    badge = `<span class="badge badge-warning"${notes}><i data-lucide="search-check"></i> FLAGGED</span>`
       + `<br /><button type="button" class="btn btn-secondary btn-sm btn-review-flagged" data-record-id="${escapeHtml(record.id)}">Review</button>`;
   } else if (record.verification_status === 'MANUAL') {
     badge = `<span class="badge badge-info"${notes}>MANUAL</span>`;
@@ -952,7 +996,7 @@ function attendanceRowHtml(record, highlight = false) {
     ? ` title="GPS accuracy ±${Math.round(record.accuracy_meters)}m"`
     : '';
   const distanceBadge = record.distance_meters !== null && record.distance_meters !== undefined
-    ? `<span class="badge badge-success"${accuracy}>📍 ${Math.round(record.distance_meters)}m</span>`
+    ? `<span class="badge badge-success"${accuracy}><i data-lucide="map-pin"></i> ${Math.round(record.distance_meters)}m</span>`
     : '<span class="badge badge-neutral">GPS N/A</span>';
 
   return `
@@ -994,7 +1038,7 @@ function renderAttendanceTable({ highlightId = null } = {}) {
     tbody.innerHTML = `
       <tr>
         <td colspan="8" class="empty-state">
-          <div class="empty-state-icon">📋</div>
+          <div class="empty-state-icon"><i data-lucide="clipboard-list"></i></div>
           <div class="empty-state-title">No Attendance Records Found</div>
           <p>Attendees appear here when they scan a staff member's QR code. Adjust the filters if you expected records.</p>
         </td>
@@ -1036,7 +1080,7 @@ function renderPendingTable() {
     tbody.innerHTML = `
       <tr>
         <td colspan="5" class="empty-state">
-          <div class="empty-state-icon">🎯</div>
+          <div class="empty-state-icon"><i data-lucide="crosshair"></i></div>
           <div class="empty-state-title">Select an event</div>
           <p>Choose an event in the first filter to see who has not checked in yet.</p>
         </td>
@@ -1052,7 +1096,7 @@ function renderPendingTable() {
     tbody.innerHTML = `
       <tr>
         <td colspan="5" class="empty-state">
-          <div class="empty-state-icon">🎉</div>
+          <div class="empty-state-icon"><i data-lucide="party-popper"></i></div>
           <div class="empty-state-title">Everyone is checked in</div>
           <p>No eligible members are pending for ${escapeHtml(event.name)} with the current filters.</p>
         </td>
@@ -1076,7 +1120,7 @@ function renderPendingTable() {
         <td style="font-family:monospace;">${escapeHtml(m.phone_number || '')}</td>
         <td style="text-align:right;">
           <button type="button" class="btn btn-secondary btn-sm btn-manual-mark" data-member-id="${escapeHtml(m.id)}" data-member-name="${escapeHtml(m.full_name)}">
-            ✍️ Mark Present
+            <i data-lucide="pen-line"></i> Mark Present
           </button>
         </td>
       </tr>
@@ -1418,10 +1462,9 @@ function populateMemberSelectOptions() {
   });
 
   const roleText = role === 'Staff' ? 'Staff' : (role === 'Agent' ? 'Agents' : 'Staff & Agents');
-  let html = `<option value="All">👤 All ${roleText} (${eligible.length})</option>`;
+  let html = `<option value="All">All ${roleText} (${eligible.length})</option>`;
   html += eligible.map((m) => {
-    const roleIcon = m.role === 'Staff' ? '👔' : '🤝';
-    return `<option value="${m.id}">${roleIcon} ${escapeHtml(m.full_name)} (${m.member_code})</option>`;
+    return `<option value="${m.id}">${escapeHtml(m.full_name)} (${m.member_code})</option>`;
   }).join('');
 
   memberSelect.innerHTML = html;
@@ -1493,7 +1536,7 @@ async function renderMembersTable() {
     tbody.innerHTML = `
       <tr>
         <td colspan="7" class="empty-state">
-          <div class="empty-state-icon">👥</div>
+          <div class="empty-state-icon"><i data-lucide="users"></i></div>
           <div class="empty-state-title">No Matching Users Found</div>
           <p>No user matches the selected filter criteria. Try adjusting your filters or search terms.</p>
         </td>
@@ -1525,13 +1568,13 @@ async function renderMembersTable() {
         <td>
           <div class="table-actions">
             <button class="btn btn-secondary btn-sm btn-transfer-member" data-id="${member.id}" title="Transfer staff to another branch or edit details">
-              🏢 Transfer / Edit
+              <i data-lucide="building-2"></i> Transfer / Edit
             </button>
             <button class="btn btn-ghost btn-sm btn-toggle-member" data-id="${member.id}">
-              ${member.is_active ? '⏸️ Deactivate' : '▶️ Activate'}
+              ${member.is_active ? '<i data-lucide="pause"></i> Deactivate' : '<i data-lucide="play"></i> Activate'}
             </button>
             <button class="btn btn-ghost btn-sm btn-delete-member" data-id="${member.id}" style="color:var(--accent-rose);" title="Delete member">
-              🗑️
+              <i data-lucide="trash-2"></i>
             </button>
           </div>
         </td>
@@ -1604,7 +1647,7 @@ async function openEditMemberModal(member) {
   if (memberPhoneInput) memberPhoneInput.value = member.phone_number;
   if (memberIsActiveCheck) memberIsActiveCheck.checked = Boolean(member.is_active);
 
-  if (titleEl) titleEl.textContent = '🏢 Transfer Branch / Edit User';
+  if (titleEl) titleEl.textContent = 'Transfer Branch / Edit User';
   if (subtitleEl) {
     subtitleEl.textContent = `Reassign branch or update profile for ${member.full_name} (${member.member_code})`;
     subtitleEl.style.display = 'block';
@@ -1618,7 +1661,7 @@ async function openEditMemberModal(member) {
     if (currBranchEl) currBranchEl.textContent = `${member.division_name || 'N/A'} • ${member.branch_name || 'N/A'}`;
     bannerEl.style.display = 'block';
   }
-  if (saveBtn) saveBtn.textContent = '💾 Save Changes & Transfer Branch';
+  if (saveBtn) saveBtn.textContent = 'Save Changes & Transfer Branch';
 
   // Populate divisions
   if (memberDivSelect) {
@@ -1655,7 +1698,7 @@ async function renderAuditLogsTable() {
     tbody.innerHTML = `
       <tr>
         <td colspan="5" class="empty-state">
-          <div class="empty-state-icon">🛡️</div>
+          <div class="empty-state-icon"><i data-lucide="shield"></i></div>
           <div class="empty-state-title">No Audit Logs Yet</div>
           <p>Security validation attempts and system activities will appear here.</p>
         </td>
@@ -1751,7 +1794,7 @@ function setupEventListeners() {
         showToast(err.message, 'error');
       } finally {
         btnDetectEditLocation.disabled = false;
-        btnDetectEditLocation.textContent = '🎯 Use Current GPS Location';
+        btnDetectEditLocation.textContent = 'Use Current GPS Location';
       }
     };
   }
@@ -1810,7 +1853,7 @@ function setupEventListeners() {
       } finally {
         if (submitBtn) {
           submitBtn.disabled = false;
-          submitBtn.textContent = isCreate ? 'Create Event' : '💾 Save Changes';
+          submitBtn.textContent = isCreate ? 'Create Event' : 'Save Changes';
         }
       }
     };
@@ -1846,7 +1889,7 @@ function setupEventListeners() {
         showToast('Failed to delete event: ' + err.message, 'error');
       } finally {
         btnConfirmDelete.disabled = false;
-        btnConfirmDelete.textContent = '🗑️ Yes, Delete Event';
+        btnConfirmDelete.textContent = 'Yes, Delete Event';
         pendingEventIdToDelete = null;
       }
     };
@@ -2119,7 +2162,7 @@ function setupEventListeners() {
         if (memberId) {
           const br = state.branches.find((b) => b.id === payload.branch_id);
           const brName = br ? br.name : 'new branch';
-          showToast(`✅ ${payload.full_name} updated successfully! Allocated to ${brName}.`, 'success');
+          showToast(`${payload.full_name} updated successfully! Allocated to ${brName}.`, 'success');
         } else {
           showToast('Member saved', 'success');
         }
@@ -2154,7 +2197,7 @@ function setupEventListeners() {
     if (csvPreviewTableBody) csvPreviewTableBody.innerHTML = '';
     if (btnConfirmBulkImport) {
       btnConfirmBulkImport.disabled = true;
-      btnConfirmBulkImport.textContent = '🚀 Confirm & Import Roster';
+      btnConfirmBulkImport.textContent = 'Confirm & Import Roster';
     }
   }
 
@@ -2292,7 +2335,7 @@ function setupEventListeners() {
 
       if (btnConfirmBulkImport) {
         btnConfirmBulkImport.disabled = validRows.length === 0;
-        btnConfirmBulkImport.textContent = `🚀 Import ${validRows.length} Members`;
+        btnConfirmBulkImport.textContent = `Import ${validRows.length} Members`;
       }
     };
     reader.onerror = () => showToast('Failed to read CSV file', 'error');
@@ -2336,7 +2379,7 @@ function setupEventListeners() {
 
       try {
         btnConfirmBulkImport.disabled = true;
-        btnConfirmBulkImport.textContent = '⏳ Importing Roster...';
+        btnConfirmBulkImport.textContent = 'Importing Roster...';
 
         const result = await dbService.bulkImportMembers(toImport);
         showToast(`Successfully imported ${result.imported} members! (${result.skipped} duplicates skipped)`, 'success');
@@ -2346,7 +2389,7 @@ function setupEventListeners() {
       } catch (err) {
         showToast(err.message || 'Import failed', 'error');
         btnConfirmBulkImport.disabled = false;
-        btnConfirmBulkImport.textContent = '🚀 Try Import Again';
+        btnConfirmBulkImport.textContent = 'Try Import Again';
       }
     };
   }
@@ -2380,9 +2423,9 @@ function setupEventListeners() {
       testConnStatus.innerHTML = '<span class="spinner spinner-primary"></span> Testing connection...';
       const res = await testSupabaseConnection(url, key);
       if (res.success) {
-        testConnStatus.innerHTML = `<span style="color:var(--accent-emerald);">✅ ${res.message}</span>`;
+        testConnStatus.innerHTML = `<span style="color:var(--accent-emerald);"><i data-lucide="circle-check"></i> ${res.message}</span>`;
       } else {
-        testConnStatus.innerHTML = `<span style="color:var(--accent-rose);">❌ ${res.message}</span>`;
+        testConnStatus.innerHTML = `<span style="color:var(--accent-rose);"><i data-lucide="circle-x"></i> ${res.message}</span>`;
       }
     };
   }
@@ -2519,7 +2562,7 @@ function applyLiveAttendance(record, { quiet = false } = {}) {
   const tickerMsg = document.getElementById('tickerMessage');
   if (tickerMsg) {
     const verb = isNewCheckOut ? 'Just checked out' : 'Just checked in';
-    const distText = record.distance_meters !== null && record.distance_meters !== undefined ? `(📍 ${Math.round(record.distance_meters)}m)` : '';
+    const distText = record.distance_meters !== null && record.distance_meters !== undefined ? `(${Math.round(record.distance_meters)}m)` : '';
     tickerMsg.innerHTML = `<strong>${verb}:</strong> ${escapeHtml(record.full_name || 'Attendee')} • <span class="badge badge-info">${escapeHtml(record.role || 'Staff')}</span> • ${escapeHtml(record.event_name || 'Event')} ${distText}`;
   }
 
@@ -2531,7 +2574,7 @@ function applyLiveAttendance(record, { quiet = false } = {}) {
     soundController.playDing();
     const label = isNewCheckOut ? 'Check-out' : 'Live check-in';
     const flag = record.verification_status === 'FLAGGED' ? ' • flagged for review' : '';
-    showToast(`⚡ ${label}: ${record.full_name || 'Attendee'} (${record.member_code || 'Code'})${flag}`, record.verification_status === 'FLAGGED' ? 'warning' : 'success');
+    showToast(`${label}: ${record.full_name || 'Attendee'} (${record.member_code || 'Code'})${flag}`, record.verification_status === 'FLAGGED' ? 'warning' : 'success');
   }
 }
 
@@ -2540,10 +2583,10 @@ function setupLiveStreamControls() {
   const soundLabel = document.getElementById('soundToggleLabel');
   if (btnToggleSound && soundLabel) {
     const isEnabled = soundController.isEnabled();
-    btnToggleSound.innerHTML = isEnabled ? '🔔 <span id="soundToggleLabel">Sound: ON</span>' : '🔕 <span id="soundToggleLabel">Sound: OFF</span>';
+    btnToggleSound.innerHTML = isEnabled ? '<i data-lucide="bell"></i> <span id="soundToggleLabel">Sound: ON</span>' : '<i data-lucide="bell-off"></i> <span id="soundToggleLabel">Sound: OFF</span>';
     btnToggleSound.onclick = () => {
       const active = soundController.toggle();
-      btnToggleSound.innerHTML = active ? '🔔 <span id="soundToggleLabel">Sound: ON</span>' : '🔕 <span id="soundToggleLabel">Sound: OFF</span>';
+      btnToggleSound.innerHTML = active ? '<i data-lucide="bell"></i> <span id="soundToggleLabel">Sound: ON</span>' : '<i data-lucide="bell-off"></i> <span id="soundToggleLabel">Sound: OFF</span>';
       showToast(active ? 'Live audio chime enabled' : 'Live audio chime muted', 'info');
     };
   }

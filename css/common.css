@@ -79,6 +79,22 @@ html, body {
   overflow-x: hidden;
 }
 
+/* Form controls do not inherit the page font by default */
+button, input, select, textarea {
+  font: inherit;
+  letter-spacing: inherit;
+}
+
+/* Lucide icons (js/icons.js): sized by the surrounding font-size */
+.icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  vertical-align: -0.14em;
+  stroke: currentColor;
+}
+
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-heading);
   font-weight: 700;
@@ -519,6 +535,10 @@ a.btn-primary:active {
 .spinner-primary {
   border-color: rgba(79, 70, 229, 0.2);
   border-top-color: var(--primary);
+}
+
+.spinner.spinner-hidden {
+  display: none;
 }
 
 @keyframes spin {

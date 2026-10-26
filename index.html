@@ -531,7 +531,7 @@
     <header class="index-navbar">
       <div class="nav-actions">
         <button type="button" class="btn btn-secondary btn-sm btn-install-app" id="btnInstallApp" title="Install as standalone desktop/laptop app">
-          💻 <span class="btn-text">Install App</span>
+          <i data-lucide="monitor"></i> <span class="btn-text">Install App</span>
         </button>
       </div>
     </header>
@@ -554,7 +554,7 @@
           <div class="card-top-strip"></div>
 
           <div class="card-head">
-            <div class="card-icon-wrap" aria-hidden="true">💻</div>
+            <div class="card-icon-wrap" aria-hidden="true"><i data-lucide="monitor"></i></div>
             <div class="card-title-group">
               <div class="card-title-row">
                 <h2 class="card-title">Admin Portal</h2>
@@ -578,7 +578,7 @@
       <!-- Attendee In-App Camera Scanner Callout -->
       <div class="hero-scanner-callout">
         <div class="scanner-left">
-          <div class="scanner-icon-bubble" aria-hidden="true">📷</div>
+          <div class="scanner-icon-bubble" aria-hidden="true"><i data-lucide="camera"></i></div>
           <div>
             <span class="scanner-callout-badge">Attendees</span>
             <div class="scanner-callout-title">Checking in to an event?</div>
@@ -593,6 +593,7 @@
   </div>
 
   <script type="module">
+    import '/js/icons.js';
     import { initDesktopInstall } from '/js/pwa-install.js';
     import { openInAppScanner } from '/js/camera-scanner.js';
 

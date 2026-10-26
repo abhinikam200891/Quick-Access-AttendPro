@@ -53,12 +53,12 @@ function ensureScannerModalDom() {
       <!-- Controls Bar -->
       <div class="scanner-controls-bar">
         <button type="button" class="scanner-tool-btn" id="btnScannerFlipCamera" title="Switch between front and back cameras">
-          <span class="scanner-tool-icon">🔄</span>
+          <span class="scanner-tool-icon"><i data-lucide="refresh-cw"></i></span>
           <span>Flip Camera</span>
         </button>
 
         <button type="button" class="scanner-tool-btn" id="btnScannerToggleTorch" title="Toggle camera flashlight/torch">
-          <span class="scanner-tool-icon">🔦</span>
+          <span class="scanner-tool-icon"><i data-lucide="flashlight"></i></span>
           <span id="torchLabel">Torch</span>
         </button>
       </div>

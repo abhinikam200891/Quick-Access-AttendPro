@@ -64,7 +64,7 @@ export function populateAnalyticsEventFilter(events) {
   if (!select) return;
 
   const currentVal = select.value || 'All';
-  select.innerHTML = '<option value="All">🌐 All Events (Aggregated)</option>' +
+  select.innerHTML = '<option value="All">All Events (Aggregated)</option>' +
     events.map((e) => `<option value="${e.id}">${escapeHtml(e.name)}</option>`).join('');
 
   if ([...select.options].some((o) => o.value === currentVal)) {

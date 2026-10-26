@@ -1194,10 +1194,11 @@ export const dbService = {
 
     if (action === 'CHECK_IN') {
       if (existing) {
-        // A repeated tap returns the same pass instead of an error
-        if (now - new Date(existing.check_in_time) < retryWindowMs) return this.mockReceipt(existing, 'CHECK_IN', true);
-        const at = new Date(existing.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        return reject('DUPLICATE_ATTENDANCE', `Attendance was already recorded for ${member.full_name} at ${at}.`, member.id);
+        // Already checked in: hand back the existing pass instead of an error
+        if (now - new Date(existing.check_in_time) >= retryWindowMs) {
+          reject('DUPLICATE_ATTENDANCE', 'Already checked in; existing pass shown.', member.id);
+        }
+        return this.mockReceipt(existing, 'CHECK_IN', true);
       }
       if (checkinWindow.state === 'waiting') {
         return reject('TIME_WINDOW_EARLY', `Check-in has not started yet. Opens at ${clockLabel(checkinWindow.start)} on ${event.date}.`, member.id);
@@ -1215,9 +1216,10 @@ export const dbService = {
         return reject('CHECKOUT_CLOSED', 'Check-out for this event has closed.', member.id);
       }
       if (existing.check_out_time) {
-        if (now - new Date(existing.check_out_time) < retryWindowMs) return this.mockReceipt(existing, 'CHECK_OUT', true);
-        const at = new Date(existing.check_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        return reject('ALREADY_CHECKED_OUT', `You already checked out at ${at}.`, member.id);
+        if (now - new Date(existing.check_out_time) >= retryWindowMs) {
+          reject('ALREADY_CHECKED_OUT', 'Already checked out; existing pass shown.', member.id);
+        }
+        return this.mockReceipt(existing, 'CHECK_OUT', true);
       }
     }
 

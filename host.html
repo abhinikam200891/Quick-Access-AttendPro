@@ -53,9 +53,9 @@
 
     <!-- 1B. Device Lock Alert Card (Shown if link is locked to another phone) -->
     <section class="device-lock-card is-hidden" id="deviceLockCard">
-      <div class="device-lock-icon">🔒</div>
+      <div class="device-lock-icon"><i data-lucide="lock"></i></div>
       <h2 class="device-lock-title">Device Lock Active</h2>
-      <div class="device-lock-badge">⛔ Unauthorized Mobile Device</div>
+      <div class="device-lock-badge"><i data-lucide="ban"></i> Unauthorized Mobile Device</div>
       <p class="device-lock-desc">
         This attendance beacon has already been activated and bound to another mobile phone.
         <strong>Forwarding or sharing this attendance-taking link is strictly prohibited.</strong>
@@ -77,46 +77,20 @@
       </div>
 
       <div class="device-lock-help-box">
-        💡 <strong>Switched to a new phone?</strong><br />
-        Ask your Event Administrator to click <strong>"🔓 Reset Device Lock"</strong> for your name in the Admin portal, then tap the button below.
+        <i data-lucide="lightbulb"></i> <strong>Switched to a new phone?</strong><br />
+        Ask your Event Administrator to click <strong>"<i data-lucide="lock-open"></i> Reset Device Lock"</strong> for your name in the Admin portal, then tap the button below.
       </div>
 
       <button type="button" class="btn btn-primary btn-block" id="btnRetryDeviceLock" style="margin-top: 16px;">
-        🔄 Check Again
+        <i data-lucide="refresh-cw"></i> Check Again
       </button>
     </section>
 
-    <!-- 2. Active Host Profile Banner -->
-    <section class="host-profile-card is-hidden" id="hostProfileCard">
-      <div class="host-avatar" id="hostAvatarIcon">👤</div>
-      <div class="host-details">
-        <div class="host-name" id="hostDisplayName">Staff Host Name</div>
-        <div class="host-meta">
-          <span id="hostCodeBadge">STF-1001</span> &bull;
-          <span id="hostEventName">Event Name</span> &bull;
-          <span class="host-device-pill" id="hostDeviceLockPill">🔒 Device Bound</span>
-        </div>
-      </div>
-      <div class="host-station-badge" id="hostStationBadge">Station #1</div>
-    </section>
-
-    <!-- 3. Metrics Ribbon -->
-    <section class="host-metrics-bar is-hidden" id="hostMetricsBar">
-      <div class="host-metric-box">
-        <div class="host-metric-val" id="beaconAttendeeCount">0</div>
-        <div class="host-metric-lbl">Checked In via Your QR</div>
-      </div>
-      <div class="host-metric-box" id="windowStatusBox">
-        <div class="host-metric-val" id="windowStatusValue">–</div>
-        <div class="host-metric-lbl" id="windowStatusLabel">Check-in window</div>
-      </div>
-    </section>
-
-    <!-- 4. Rotating Dynamic QR Stage (Host Beacon) -->
+    <!-- 2. Rotating Dynamic QR Stage (Host Beacon): first, so it is visible without scrolling -->
     <section class="qr-stage-card is-hidden" id="qrStageCard">
       <div class="qr-stage-header">
         <div class="qr-instruction-title">Scan to Mark Attendance</div>
-        <div class="qr-instruction-sub">Point phone camera to verify attendance</div>
+        <div class="qr-instruction-sub" id="hostEventName">Event Name</div>
       </div>
 
       <div class="qr-canvas-wrapper" id="qrCanvasWrapper">
@@ -148,12 +122,37 @@
       </div>
     </section>
 
+    <!-- 3. Who is taking attendance (one compact line under the QR) -->
+    <section class="host-profile-card is-hidden" id="hostProfileCard">
+      <div class="host-details">
+        <div class="host-name" id="hostDisplayName">Staff Host Name</div>
+        <div class="host-meta">
+          <span id="hostCodeBadge">STF-1001</span>
+          <span aria-hidden="true">&middot;</span>
+          <span id="hostStationBadge">Station #1</span>
+        </div>
+      </div>
+      <span class="host-device-pill" id="hostDeviceLockPill"><i data-lucide="lock"></i> Device Bound</span>
+    </section>
+
+    <!-- 4. Metrics Ribbon -->
+    <section class="host-metrics-bar is-hidden" id="hostMetricsBar">
+      <div class="host-metric-box">
+        <div class="host-metric-val" id="beaconAttendeeCount">0</div>
+        <div class="host-metric-lbl">Checked In via Your QR</div>
+      </div>
+      <div class="host-metric-box" id="windowStatusBox">
+        <div class="host-metric-val" id="windowStatusValue">–</div>
+        <div class="host-metric-lbl" id="windowStatusLabel">Check-in window</div>
+      </div>
+    </section>
+
     <!-- 5. Host Self-Attendance Card -->
     <section class="host-self-card is-hidden" id="hostSelfCard">
       <!-- Unmarked State -->
       <div id="hostSelfUnmarked">
         <div class="host-self-header">
-          <span class="host-self-icon">⭐</span>
+          <span class="host-self-icon"><i data-lucide="star"></i></span>
           <div>
             <div class="host-self-title">Record Your Own Attendance</div>
             <div style="font-size:0.75rem;color:#38bdf8;">Attendance taker check-in</div>
@@ -176,14 +175,14 @@
         />
         <button type="button" class="btn-host-self-checkin" id="btnHostSelfCheckin">
           <span class="spinner spinner-hidden" id="hostSelfSpinner"></span>
-          <span>✓ Mark My Own Attendance</span>
+          <span><i data-lucide="check"></i> Mark My Own Attendance</span>
         </button>
       </div>
 
       <!-- Already Marked State -->
       <div id="hostSelfMarked" class="is-hidden">
         <div class="host-already-verified">
-          <div class="host-verified-icon">✓</div>
+          <div class="host-verified-icon"><i data-lucide="check"></i></div>
           <div>
             <div style="font-weight:700;color:#ffffff;">Host Attendance Verified!</div>
             <div id="hostVerifiedTimestamp" style="font-size:0.75rem;color:#a7f3d0;">Recorded at - &bull; Geofence Verified</div>
@@ -195,7 +194,7 @@
     <!-- 6. Change Host / Re-select option -->
     <div style="text-align: center; margin-top: 4px;" class="is-hidden" id="hostSwitchWrap">
       <button type="button" class="btn btn-ghost btn-sm" id="btnSwitchHost" style="color: #94a3b8;">
-        ↺ Change Host / Station
+        <i data-lucide="rotate-ccw"></i> Change Host / Station
       </button>
     </div>
   </main>
@@ -204,6 +203,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- Controller Script -->
+  <script type="module" src="/js/icons.js"></script>
   <script type="module" src="/js/host.js"></script>
 </body>
 </html>

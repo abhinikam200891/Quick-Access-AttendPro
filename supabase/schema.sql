@@ -708,13 +708,12 @@ BEGIN
 
     IF v_action = 'CHECK_IN' THEN
         IF v_existing.id IS NOT NULL THEN
-            -- A repeated tap returns the same pass instead of an error
-            IF v_existing.check_in_time > v_now - c_retry_window THEN
-                RETURN attendance_receipt(v_existing.id, 'CHECK_IN', true);
+            -- Already checked in: hand back the existing pass instead of an error.
+            -- Repeats after the retry window are still logged as rejected attempts.
+            IF v_existing.check_in_time <= v_now - c_retry_window THEN
+                PERFORM attendance_reject(p_event_id, v_member.id, 'DUPLICATE_ATTENDANCE', 'Already checked in; existing pass shown.', NULL, p_user_agent);
             END IF;
-            RETURN attendance_reject(p_event_id, v_member.id, 'DUPLICATE_ATTENDANCE',
-                format('Attendance was already recorded for %s at %s.', v_member.full_name, to_char(v_existing.check_in_time AT TIME ZONE v_tz, 'HH12:MI AM')),
-                NULL, p_user_agent);
+            RETURN attendance_receipt(v_existing.id, 'CHECK_IN', true);
         END IF;
 
         IF v_now < v_start_ts THEN
@@ -737,12 +736,10 @@ BEGIN
             RETURN attendance_reject(p_event_id, v_member.id, 'CHECKOUT_CLOSED', 'Check-out for this event has closed.', NULL, p_user_agent);
         END IF;
         IF v_existing.check_out_time IS NOT NULL THEN
-            IF v_existing.check_out_time > v_now - c_retry_window THEN
-                RETURN attendance_receipt(v_existing.id, 'CHECK_OUT', true);
+            IF v_existing.check_out_time <= v_now - c_retry_window THEN
+                PERFORM attendance_reject(p_event_id, v_member.id, 'ALREADY_CHECKED_OUT', 'Already checked out; existing pass shown.', NULL, p_user_agent);
             END IF;
-            RETURN attendance_reject(p_event_id, v_member.id, 'ALREADY_CHECKED_OUT',
-                format('You already checked out at %s.', to_char(v_existing.check_out_time AT TIME ZONE v_tz, 'HH12:MI AM')),
-                NULL, p_user_agent);
+            RETURN attendance_receipt(v_existing.id, 'CHECK_OUT', true);
         END IF;
     END IF;
 

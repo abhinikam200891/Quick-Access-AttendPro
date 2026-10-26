@@ -84,7 +84,7 @@ export async function signInAdmin(email, password) {
     if (error) {
       let msg = error.message || 'Authentication failed';
       if (msg.toLowerCase().includes('email not confirmed')) {
-        msg = '⚠️ Email Not Confirmed Yet. In your Supabase Dashboard, go to Authentication → Users, click the three dots (...) next to your email, and select "Auto-confirm user" (or toggle off "Confirm email" in Auth → Providers → Email).';
+        msg = 'Email Not Confirmed Yet. In your Supabase Dashboard, go to Authentication → Users, click the three dots (...) next to your email, and select "Auto-confirm user" (or toggle off "Confirm email" in Auth → Providers → Email).';
       }
       return { success: false, error: msg };
     }
@@ -260,6 +260,10 @@ export function showAdminDashboard(user) {
   const userIndicator = document.getElementById('adminUserIndicator');
   if (userIndicator && user?.email) {
     userIndicator.textContent = user.email;
+    const menuEmail = document.getElementById('adminUserIndicatorMenu');
+    if (menuEmail) menuEmail.textContent = user.email;
+    const initial = document.getElementById('adminAvatarInitial');
+    if (initial) initial.textContent = user.email.charAt(0).toUpperCase();
   }
 
   if (typeof authCallbacks.onLoginSuccess === 'function') {
@@ -365,7 +369,7 @@ function setupAuthEventListeners() {
       if (input) {
         const isPassword = input.type === 'password';
         input.type = isPassword ? 'text' : 'password';
-        btn.textContent = isPassword ? '🙈' : '👁️';
+        btn.innerHTML = `<i data-lucide="${isPassword ? 'eye-off' : 'eye'}"></i>`;
       }
     };
   });

@@ -86,10 +86,10 @@
 .host-main {
   width: 100%;
   max-width: 540px;
-  padding: 18px 20px 40px;
+  padding: 12px 14px 40px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 12px;
 }
 
 /* Host Info Card */
@@ -97,11 +97,11 @@
   background: #ffffff;
   border: 1px solid var(--border-subtle, #e2e8f0);
   border-radius: var(--radius-lg);
-  padding: 16px 20px;
+  padding: 10px 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 10px;
   box-shadow: var(--shadow-sm);
 }
 
@@ -120,12 +120,16 @@
 
 .host-details {
   flex: 1;
+  min-width: 0;
 }
 
 .host-name {
-  font-size: 1.0625rem;
+  font-size: 0.9375rem;
   font-weight: 700;
   color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .host-meta {
@@ -133,9 +137,11 @@
   color: #64748b;
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 2px;
+  gap: 6px;
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .host-meta strong {
@@ -180,7 +186,7 @@
 .qr-stage-card {
   background: #ffffff;
   border-radius: var(--radius-xl);
-  padding: 24px 20px;
+  padding: 16px 16px 18px;
   color: #0f172a;
   text-align: center;
   box-shadow: var(--shadow-lg);
@@ -190,7 +196,7 @@
 }
 
 .qr-stage-header {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .qr-instruction-title {
@@ -219,8 +225,8 @@
 
 .qr-canvas-wrapper canvas {
   display: block;
-  width: 250px !important;
-  height: 250px !important;
+  width: min(76vw, 320px) !important;
+  height: min(76vw, 320px) !important;
   image-rendering: pixelated;
 }
 
@@ -595,4 +601,12 @@
   border-radius: var(--radius-full);
   font-size: 0.7rem;
   font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Toasts at the top so they never cover the QR */
+.toast-container {
+  top: 16px;
+  bottom: auto;
 }

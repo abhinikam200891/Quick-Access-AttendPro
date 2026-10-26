@@ -270,7 +270,7 @@ function showDeviceLockScreen(event, host) {
           showToast(err.message, 'error');
         }
         btnRetry.disabled = false;
-        btnRetry.textContent = '🔄 Check Again';
+        btnRetry.textContent = 'Check Again';
       };
     }
   }
@@ -331,7 +331,7 @@ async function launchBeacon(event, host) {
 
   const pill = document.getElementById('hostDeviceLockPill');
   if (pill) {
-    pill.textContent = '🔒 Bound to this Phone';
+    pill.innerHTML = '<i data-lucide="lock"></i> Bound to this phone';
   }
 
   if (lockResult.isNewLock) {
@@ -475,7 +475,7 @@ async function updateRotatingQrCode() {
     );
 
     await QRCode.toCanvas(canvas, checkinUrl, {
-      width: 250,
+      width: 320,
       margin: 2,
       color: {
         dark: '#0f172a',
@@ -516,7 +516,7 @@ async function refreshHostStats() {
     markedDiv.classList.remove('is-hidden');
     const timeStr = new Date(stats.self_check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const distStr = stats.self_distance_meters !== null && stats.self_distance_meters !== undefined
-      ? ` • 📍 ${Math.round(stats.self_distance_meters)}m away`
+      ? ` • ${Math.round(stats.self_distance_meters)}m away`
       : '';
     timestampEl.textContent = `Recorded at ${timeStr} • Verified ${stats.self_check_in_mode === 'HOST_SELF' ? 'as Host' : 'via scan'}${distStr}`;
   } else {
@@ -528,7 +528,7 @@ async function refreshHostStats() {
   if (hostState.scannedCount !== null && count > hostState.scannedCount) {
     const added = count - hostState.scannedCount;
     soundController.playDing();
-    showToast(`🎉 ${added} new check-in${added === 1 ? '' : 's'} via your beacon`, 'success');
+    showToast(`${added} new check-in${added === 1 ? '' : 's'} via your beacon`, 'success');
   }
   hostState.scannedCount = count;
   const countEl = document.getElementById('beaconAttendeeCount');
@@ -597,7 +597,7 @@ function setupHostSelfCheckinButton() {
 
       if (result.success) {
         soundController.playDing();
-        showToast('✓ Your host attendance is verified and recorded!', 'success');
+        showToast('Your host attendance is verified and recorded!', 'success');
         await refreshHostStats();
       } else {
         alert(`Check-in rejected: ${result.message}`);

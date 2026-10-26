@@ -36,7 +36,7 @@
         <div class="form-group">
           <label class="form-label" for="adminLoginEmail">Admin Email ID <span class="required">*</span></label>
           <div class="input-with-icon">
-            <span class="input-icon">✉️</span>
+            <span class="input-icon"><i data-lucide="mail"></i></span>
             <input type="email" id="adminLoginEmail" class="form-control" placeholder="admin@attendpro.com" required autocomplete="username" />
           </div>
         </div>
@@ -47,15 +47,15 @@
             <button type="button" class="auth-link-btn" id="btnGoToForgotPassword">Forgot Password?</button>
           </div>
           <div class="input-with-icon password-wrap">
-            <span class="input-icon">🔑</span>
+            <span class="input-icon"><i data-lucide="key-round"></i></span>
             <input type="password" id="adminLoginPassword" class="form-control" placeholder="••••••••••••" required autocomplete="current-password" />
-            <button type="button" class="btn-toggle-pwd" title="Show/Hide Password">👁️</button>
+            <button type="button" class="btn-toggle-pwd" title="Show/Hide Password"><i data-lucide="eye"></i></button>
           </div>
         </div>
 
         <button type="submit" class="btn btn-primary btn-block btn-auth-submit" id="btnAdminSignIn">
           <span class="spinner spinner-hidden" id="loginSpinner"></span>
-          <span>⚡ Sign In to Admin Portal</span>
+          <span><i data-lucide="zap"></i> Sign In to Admin Portal</span>
         </button>
 
         <div class="auth-extra-links">
@@ -74,18 +74,18 @@
         <div class="form-group">
           <label class="form-label" for="adminForgotEmail">Registered Admin Email <span class="required">*</span></label>
           <div class="input-with-icon">
-            <span class="input-icon">✉️</span>
+            <span class="input-icon"><i data-lucide="mail"></i></span>
             <input type="email" id="adminForgotEmail" class="form-control" placeholder="admin@attendpro.com" required />
           </div>
         </div>
 
         <button type="submit" class="btn btn-primary btn-block btn-auth-submit" id="btnSendResetOtp">
           <span class="spinner spinner-hidden" id="forgotSpinner"></span>
-          <span>📩 Send Verification Code (OTP)</span>
+          <span><i data-lucide="send"></i> Send Verification Code (OTP)</span>
         </button>
 
         <div style="text-align: center; margin-top: 16px;">
-          <button type="button" class="auth-link-btn" id="btnBackToLoginFromForgot">← Back to Sign In</button>
+          <button type="button" class="auth-link-btn" id="btnBackToLoginFromForgot"><i data-lucide="arrow-left"></i> Back to Sign In</button>
         </div>
       </form>
 
@@ -99,7 +99,7 @@
         <div class="form-group">
           <label class="form-label" for="adminResetOtp">6-Digit Verification Code (OTP) <span class="required">*</span></label>
           <div class="input-with-icon">
-            <span class="input-icon">🔢</span>
+            <span class="input-icon"><i data-lucide="hash"></i></span>
             <input type="text" id="adminResetOtp" class="form-control auth-otp-input" placeholder="123456" maxlength="8" required />
           </div>
         </div>
@@ -107,23 +107,23 @@
         <div class="form-group" style="margin-top: 14px;">
           <label class="form-label" for="adminNewPassword">New Password <span class="required">*</span></label>
           <div class="input-with-icon password-wrap">
-            <span class="input-icon">🔒</span>
+            <span class="input-icon"><i data-lucide="lock"></i></span>
             <input type="password" id="adminNewPassword" class="form-control" placeholder="Min 6 characters" required minlength="6" />
-            <button type="button" class="btn-toggle-pwd" title="Show/Hide Password">👁️</button>
+            <button type="button" class="btn-toggle-pwd" title="Show/Hide Password"><i data-lucide="eye"></i></button>
           </div>
         </div>
 
         <div class="form-group" style="margin-top: 14px;">
           <label class="form-label" for="adminConfirmPassword">Confirm New Password <span class="required">*</span></label>
           <div class="input-with-icon password-wrap">
-            <span class="input-icon">🔒</span>
+            <span class="input-icon"><i data-lucide="lock"></i></span>
             <input type="password" id="adminConfirmPassword" class="form-control" placeholder="Re-enter new password" required minlength="6" />
           </div>
         </div>
 
         <button type="submit" class="btn btn-primary btn-block btn-auth-submit" id="btnSubmitNewPassword">
           <span class="spinner spinner-hidden" id="resetSpinner"></span>
-          <span>🔐 Reset Password &amp; Sign In</span>
+          <span><i data-lucide="lock-keyhole"></i> Reset Password &amp; Sign In</span>
         </button>
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
@@ -142,7 +142,7 @@
         <div class="form-group">
           <label class="form-label" for="adminRegisterEmail">Admin Email ID <span class="required">*</span></label>
           <div class="input-with-icon">
-            <span class="input-icon">✉️</span>
+            <span class="input-icon"><i data-lucide="mail"></i></span>
             <input type="email" id="adminRegisterEmail" class="form-control" placeholder="admin@attendpro.com" required />
           </div>
         </div>
@@ -150,27 +150,27 @@
         <div class="form-group" style="margin-top: 14px;">
           <label class="form-label" for="adminRegisterPassword">Password <span class="required">*</span></label>
           <div class="input-with-icon password-wrap">
-            <span class="input-icon">🔒</span>
+            <span class="input-icon"><i data-lucide="lock"></i></span>
             <input type="password" id="adminRegisterPassword" class="form-control" placeholder="Min 6 characters" required minlength="6" />
-            <button type="button" class="btn-toggle-pwd" title="Show/Hide Password">👁️</button>
+            <button type="button" class="btn-toggle-pwd" title="Show/Hide Password"><i data-lucide="eye"></i></button>
           </div>
         </div>
 
         <div class="form-group" style="margin-top: 14px;">
           <label class="form-label" for="adminRegisterConfirmPassword">Confirm Password <span class="required">*</span></label>
           <div class="input-with-icon password-wrap">
-            <span class="input-icon">🔒</span>
+            <span class="input-icon"><i data-lucide="lock"></i></span>
             <input type="password" id="adminRegisterConfirmPassword" class="form-control" placeholder="Confirm password" required minlength="6" />
           </div>
         </div>
 
         <button type="submit" class="btn btn-primary btn-block btn-auth-submit" id="btnSubmitRegister">
           <span class="spinner spinner-hidden" id="registerSpinner"></span>
-          <span>✨ Create Admin Account</span>
+          <span><i data-lucide="sparkles"></i> Create Admin Account</span>
         </button>
 
         <div style="text-align: center; margin-top: 16px;">
-          <button type="button" class="auth-link-btn" id="btnBackToLoginFromRegister">← Back to Sign In</button>
+          <button type="button" class="auth-link-btn" id="btnBackToLoginFromRegister"><i data-lucide="arrow-left"></i> Back to Sign In</button>
         </div>
       </form>
     </div>
@@ -192,21 +192,29 @@
         <span id="envLabel">Connecting...</span>
       </div>
 
-      <div class="admin-user-pill" id="adminUserPill" title="Authenticated Administrator">
-        👤 <span id="adminUserIndicator">Admin</span>
+      <!-- Account menu: settings, install and sign out live here instead of the bar -->
+      <div class="account-menu-wrap" id="accountMenuWrap">
+        <button type="button" class="account-menu-trigger" id="btnAccountMenu" aria-haspopup="menu" aria-expanded="false" aria-controls="accountMenu" title="Account">
+          <span class="account-avatar" id="adminAvatarInitial" aria-hidden="true">A</span>
+          <span class="account-email" id="adminUserIndicator">Admin</span>
+          <i data-lucide="chevron-down" class="account-caret"></i>
+        </button>
+        <div class="account-menu is-hidden" id="accountMenu" role="menu">
+          <div class="account-menu-header">
+            <span class="account-menu-label">Signed in as</span>
+            <span class="account-menu-email" id="adminUserIndicatorMenu">Admin</span>
+          </div>
+          <button type="button" class="account-menu-item" id="btnOpenSettings" role="menuitem">
+            <i data-lucide="settings"></i> Settings &amp; Supabase
+          </button>
+          <button type="button" class="account-menu-item btn-install-app" id="btnAdminInstallApp" role="menuitem">
+            <i data-lucide="monitor"></i> Install App
+          </button>
+          <button type="button" class="account-menu-item account-menu-danger" id="btnAdminSignOut" role="menuitem">
+            <i data-lucide="log-out"></i> Sign Out
+          </button>
+        </div>
       </div>
-
-      <button class="btn btn-secondary btn-sm btn-install-app" id="btnAdminInstallApp" title="Install Quick Access AttendPro on your Computer">
-        💻 <span class="btn-text">Install App</span>
-      </button>
-
-      <button class="btn btn-secondary btn-sm" id="btnOpenSettings" title="Configure Supabase & System">
-        ⚙️ <span class="btn-text">Settings</span>
-      </button>
-
-      <button class="btn btn-ghost btn-sm btn-sign-out" id="btnAdminSignOut" title="Sign out of Admin Portal">
-        🚪 <span class="btn-text">Sign Out</span>
-      </button>
     </div>
   </header>
 
@@ -214,19 +222,19 @@
   <nav class="admin-subnav">
     <div class="nav-tabs">
       <button class="tab-btn active" data-tab="events">
-        📅 <span class="tab-label-full">Events Management</span><span class="tab-label-short">Events</span>
+        <i data-lucide="calendar"></i> <span class="tab-label-full">Events Management</span><span class="tab-label-short">Events</span>
       </button>
       <button class="tab-btn" data-tab="attendance">
-        📊 <span class="tab-label-full">Live Attendance</span><span class="tab-label-short">Attendance</span>
+        <i data-lucide="chart-column"></i> <span class="tab-label-full">Live Attendance</span><span class="tab-label-short">Attendance</span>
       </button>
       <button class="tab-btn" data-tab="analytics" id="tabBtnAnalytics">
-        📈 <span class="tab-label-full">Visual Analytics</span><span class="tab-label-short">Analytics</span>
+        <i data-lucide="trending-up"></i> <span class="tab-label-full">Visual Analytics</span><span class="tab-label-short">Analytics</span>
       </button>
       <button class="tab-btn" data-tab="masters">
-        👥 <span class="tab-label-full">Member Directory</span><span class="tab-label-short">Members</span>
+        <i data-lucide="users"></i> <span class="tab-label-full">Member Directory</span><span class="tab-label-short">Members</span>
       </button>
       <button class="tab-btn" data-tab="audit">
-        🛡️ <span class="tab-label-full">Security Audit Logs</span><span class="tab-label-short">Audit</span>
+        <i data-lucide="shield"></i> <span class="tab-label-full">Security Audit Logs</span><span class="tab-label-short">Audit</span>
       </button>
     </div>
 
@@ -242,7 +250,7 @@
           <div class="stat-value" id="kpiTotalEvents">0</div>
           <div class="stat-hint stat-hint-secondary">Scheduled sessions</div>
         </div>
-        <div class="stat-icon stat-icon-indigo">📅</div>
+        <div class="stat-icon stat-icon-indigo"><i data-lucide="calendar"></i></div>
       </div>
 
       <div class="stat-card">
@@ -251,7 +259,7 @@
           <div class="stat-value" id="kpiActiveEvents">0</div>
           <div class="stat-hint">Accepting check-ins</div>
         </div>
-        <div class="stat-icon stat-icon-emerald">⚡</div>
+        <div class="stat-icon stat-icon-emerald"><i data-lucide="zap"></i></div>
       </div>
 
       <div class="stat-card">
@@ -260,7 +268,7 @@
           <div class="stat-value" id="kpiTotalAttendance">0</div>
           <div class="stat-hint">Total recorded</div>
         </div>
-        <div class="stat-icon stat-icon-cyan">✅</div>
+        <div class="stat-icon stat-icon-cyan"><i data-lucide="circle-check"></i></div>
       </div>
 
       <div class="stat-card">
@@ -269,7 +277,7 @@
           <div class="stat-value" id="kpiTotalMembers">0</div>
           <div class="stat-hint">Staff &amp; Agents</div>
         </div>
-        <div class="stat-icon stat-icon-amber">👥</div>
+        <div class="stat-icon stat-icon-amber"><i data-lucide="users"></i></div>
       </div>
     </section>
 
@@ -304,7 +312,7 @@
         <div class="section-actions">
           <span class="badge badge-neutral" id="attendanceRecordCount">0 records</span>
           <button class="btn btn-secondary btn-sm" id="btnExportCsv">
-            📥 Export to CSV / Excel
+            <i data-lucide="file-down"></i> Export to CSV / Excel
           </button>
         </div>
       </div>
@@ -318,13 +326,13 @@
               <span class="live-status-text">LIVE REALTIME FEED ACTIVE</span>
             </div>
             <div class="live-ticker" id="liveTicker">
-              <span class="ticker-pulse">⚡</span>
+              <span class="ticker-pulse"><i data-lucide="zap"></i></span>
               <span id="tickerMessage">Real-time sync listening for check-ins across all devices...</span>
             </div>
           </div>
           <div class="live-actions">
             <button type="button" class="btn btn-ghost btn-sm" id="btnToggleSound" title="Toggle audio chime on verified check-in">
-              🔔 <span id="soundToggleLabel">Sound: ON</span>
+              <i data-lucide="bell"></i> <span id="soundToggleLabel">Sound: ON</span>
             </button>
           </div>
         </div>
@@ -339,20 +347,20 @@
           <div class="filter-group">
             <select class="form-control form-select" id="filterMode" title="Filter attendance by check-in mode" aria-label="Filter attendance by check-in mode">
               <option value="All">All Modes</option>
-              <option value="ATTENDEE_SCAN">📲 Staff QR Scan</option>
-              <option value="HOST_SELF">⭐ Attendance Taker (Self)</option>
-              <option value="ADMIN_MANUAL">✍️ Manual (Admin)</option>
-              <option value="VENUE_STATIC_QR">🏢 Legacy Static QR</option>
+              <option value="ATTENDEE_SCAN">Staff QR Scan</option>
+              <option value="HOST_SELF">Attendance Taker (Self)</option>
+              <option value="ADMIN_MANUAL">Manual (Admin)</option>
+              <option value="VENUE_STATIC_QR">Legacy Static QR</option>
             </select>
           </div>
           <div class="filter-group">
             <select class="form-control form-select" id="filterStatus" title="Filter attendance by status" aria-label="Filter attendance by status">
               <option value="All">All Statuses</option>
-              <option value="FLAGGED">🔎 Flagged (needs review)</option>
-              <option value="VERIFIED">✅ Verified</option>
-              <option value="MANUAL">✍️ Manual</option>
-              <option value="LATE">⏰ Late</option>
-              <option value="CHECKED_OUT">⬅️ Checked out</option>
+              <option value="FLAGGED">Flagged (needs review)</option>
+              <option value="VERIFIED">Verified</option>
+              <option value="MANUAL">Manual</option>
+              <option value="LATE">Late</option>
+              <option value="CHECKED_OUT">Checked out</option>
             </select>
           </div>
           <div class="filter-group">
@@ -376,21 +384,21 @@
             <input type="date" class="form-control" id="filterDate" title="Filter attendance by date" aria-label="Filter attendance by date" placeholder="YYYY-MM-DD" />
           </div>
           <div class="filter-group filter-search-group">
-            <input type="text" class="form-control" id="filterSearch" placeholder="🔍 Search by name or code..." title="Search attendance records" aria-label="Search attendance records" />
+            <input type="text" class="form-control" id="filterSearch" placeholder="Search by name or code..." title="Search attendance records" aria-label="Search attendance records" />
           </div>
         </div>
 
         <!-- Present / Pending switch -->
         <div class="filter-bar" style="padding-top: 0;">
           <div class="role-segmented-control attendance-view-toggle" role="tablist" aria-label="Attendance view">
-            <button type="button" class="btn btn-secondary btn-sm active" id="btnViewPresent" role="tab">✅ Present</button>
-            <button type="button" class="btn btn-secondary btn-sm" id="btnViewPending" role="tab">⏳ Pending <span class="badge badge-neutral" id="pendingCountBadge">–</span></button>
+            <button type="button" class="btn btn-secondary btn-sm active" id="btnViewPresent" role="tab"><i data-lucide="circle-check"></i> Present</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnViewPending" role="tab"><i data-lucide="hourglass"></i> Pending <span class="badge badge-neutral" id="pendingCountBadge">–</span></button>
           </div>
         </div>
 
         <!-- Table View: Present -->
         <div class="table-responsive" id="presentTableWrap">
-          <div class="mobile-table-hint">👉 Swipe horizontally to view full table details</div>
+          <div class="mobile-table-hint"><i data-lucide="move-horizontal"></i> Swipe horizontally to view full table details</div>
           <table class="data-table">
             <thead>
               <tr>
@@ -440,7 +448,7 @@
         <div class="section-actions">
           <div class="filter-group">
             <select class="form-control form-select" id="analyticsEventFilter" title="Select event for analytics" aria-label="Select event for analytics">
-              <option value="All">🌐 All Events (Aggregated)</option>
+              <option value="All">All Events (Aggregated)</option>
             </select>
           </div>
         </div>
@@ -449,7 +457,7 @@
       <!-- Top Analytics Metric Ribbon -->
       <div class="analytics-kpi-grid">
         <div class="analytics-kpi-card">
-          <div class="kpi-icon-wrap kpi-indigo">📊</div>
+          <div class="kpi-icon-wrap kpi-indigo"><i data-lucide="chart-column"></i></div>
           <div>
             <div class="kpi-subhead">Turnout Rate</div>
             <div class="kpi-metric" id="analyticsKpiTurnout">0 (0%)</div>
@@ -458,7 +466,7 @@
         </div>
 
         <div class="analytics-kpi-card">
-          <div class="kpi-icon-wrap kpi-cyan">⚡</div>
+          <div class="kpi-icon-wrap kpi-cyan"><i data-lucide="zap"></i></div>
           <div>
             <div class="kpi-subhead">Peak Velocity</div>
             <div class="kpi-metric" id="analyticsKpiVelocity">0 / window</div>
@@ -467,7 +475,7 @@
         </div>
 
         <div class="analytics-kpi-card">
-          <div class="kpi-icon-wrap kpi-emerald">📍</div>
+          <div class="kpi-icon-wrap kpi-emerald"><i data-lucide="map-pin"></i></div>
           <div>
             <div class="kpi-subhead">Avg Venue Distance</div>
             <div class="kpi-metric" id="analyticsKpiDistance">0 m</div>
@@ -476,7 +484,7 @@
         </div>
 
         <div class="analytics-kpi-card">
-          <div class="kpi-icon-wrap kpi-amber">⏱️</div>
+          <div class="kpi-icon-wrap kpi-amber"><i data-lucide="timer"></i></div>
           <div>
             <div class="kpi-subhead">Punctuality Index</div>
             <div class="kpi-metric" id="analyticsKpiPunctuality">100% On-Time</div>
@@ -564,10 +572,10 @@
         <div class="section-actions">
           <span class="badge badge-neutral" id="memberRecordCount">0 members</span>
           <button class="btn btn-secondary btn-sm" id="btnOpenOrgStructure">
-            🏢 Divisions &amp; Branches
+            <i data-lucide="building-2"></i> Divisions &amp; Branches
           </button>
           <button class="btn btn-secondary btn-sm" id="btnOpenBulkImport">
-            📥 Bulk Import CSV
+            <i data-lucide="file-down"></i> Bulk Import CSV
           </button>
           <button class="btn btn-primary btn-sm" id="btnOpenAddMember">
             + Add Member
@@ -581,7 +589,7 @@
           <!-- 1. Select Particular Staff or Agent -->
           <div class="filter-group filter-group-user-select">
             <select class="form-control form-select" id="filterMemberSelect" title="Select particular staff or agent">
-              <option value="All">👤 All Staff &amp; Agents</option>
+              <option value="All">All Staff &amp; Agents</option>
             </select>
           </div>
 
@@ -589,8 +597,8 @@
           <div class="filter-group">
             <select class="form-control form-select" id="filterMemberRole" title="Filter members by role" aria-label="Filter members by role">
               <option value="All">All Roles</option>
-              <option value="Staff">👔 Staff Only</option>
-              <option value="Agent">🤝 Agent Only</option>
+              <option value="Staff">Staff Only</option>
+              <option value="Agent">Agent Only</option>
             </select>
           </div>
 
@@ -619,19 +627,19 @@
 
           <!-- 6. Search Bar -->
           <div class="filter-group filter-search-group">
-            <input type="text" class="form-control" id="filterMemberSearch" placeholder="🔍 Search name, code, or phone..." title="Search members" aria-label="Search members" />
+            <input type="text" class="form-control" id="filterMemberSearch" placeholder="Search name, code, or phone..." title="Search members" aria-label="Search members" />
           </div>
 
           <!-- 7. Reset Filters Button -->
           <div class="filter-group">
             <button type="button" class="btn btn-ghost btn-sm" id="btnResetMemberFilters" title="Reset all filters">
-              ↺ Reset
+              <i data-lucide="rotate-ccw"></i> Reset
             </button>
           </div>
         </div>
 
         <div class="table-responsive">
-          <div class="mobile-table-hint">👉 Swipe horizontally to view full table details</div>
+          <div class="mobile-table-hint"><i data-lucide="move-horizontal"></i> Swipe horizontally to view full table details</div>
           <table class="data-table">
             <thead>
               <tr>
@@ -663,7 +671,7 @@
 
       <div class="card-panel">
         <div class="table-responsive">
-          <div class="mobile-table-hint">👉 Swipe horizontally to view full table details</div>
+          <div class="mobile-table-hint"><i data-lucide="move-horizontal"></i> Swipe horizontally to view full table details</div>
           <table class="data-table">
             <thead>
               <tr>
@@ -691,7 +699,7 @@
   <div class="modal-backdrop" id="editEventModal">
     <div class="modal-card">
       <div class="modal-header">
-        <h3 class="modal-title" id="eventModalTitle">✏️ Edit Attendance Event</h3>
+        <h3 class="modal-title" id="eventModalTitle"><i data-lucide="pencil"></i> Edit Attendance Event</h3>
         <button class="modal-close">&times;</button>
       </div>
       <form id="editEventForm">
@@ -753,9 +761,9 @@
           <!-- Geofence Coordinates & Radius Adjustments -->
           <div class="form-group geofence-box">
             <div class="geofence-header">
-              <label class="form-label label-no-margin">📍 Venue GPS Coordinates &amp; Geofence <span class="required" title="Required when the geofence GPS check is on">*</span></label>
+              <label class="form-label label-no-margin"><i data-lucide="map-pin"></i> Venue GPS Coordinates &amp; Geofence <span class="required" title="Required when the geofence GPS check is on">*</span></label>
               <button type="button" class="btn btn-secondary btn-sm" id="btnDetectEditGps">
-                🎯 Use Current GPS Location
+                <i data-lucide="crosshair"></i> Use Current GPS Location
               </button>
             </div>
 
@@ -763,7 +771,7 @@
             <div class="geofence-map-wrapper" style="margin-bottom: 14px;">
               <div class="map-toolbar">
                 <span style="font-weight:600; color:#1e293b; display:inline-flex; align-items:center; gap:6px;">
-                  <span>🗺️</span> Adjust Geofence Pin &amp; Boundary
+                  <span><i data-lucide="map"></i></span> Adjust Geofence Pin &amp; Boundary
                 </span>
                 <span style="font-size:0.75rem; color:#64748b;">Click map or drag pin to update location</span>
               </div>
@@ -792,11 +800,11 @@
 
         <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
           <button type="button" class="btn btn-ghost btn-sm" id="btnDeleteFromEditModal" style="color:var(--accent-rose);">
-            🗑️ Delete Event
+            <i data-lucide="trash-2"></i> Delete Event
           </button>
           <div style="display:flex; gap:8px;">
             <button type="button" class="btn btn-secondary btn-modal-dismiss">Cancel</button>
-            <button type="submit" class="btn btn-primary" id="btnSaveEditedEvent">💾 Save Changes</button>
+            <button type="submit" class="btn btn-primary" id="btnSaveEditedEvent"><i data-lucide="save"></i> Save Changes</button>
           </div>
         </div>
       </form>
@@ -807,7 +815,7 @@
   <div class="modal-backdrop" id="deleteEventConfirmModal">
     <div class="modal-card" style="max-width: 480px;">
       <div class="modal-header" style="background: rgba(239, 68, 68, 0.08); border-bottom: 1px solid rgba(239, 68, 68, 0.2);">
-        <h3 class="modal-title" style="color: #b91c1c;">⚠️ Delete Event Confirmation</h3>
+        <h3 class="modal-title" style="color: #b91c1c;"><i data-lucide="triangle-alert"></i> Delete Event Confirmation</h3>
         <button class="modal-close">&times;</button>
       </div>
       <div class="modal-body" style="padding: 24px;">
@@ -821,7 +829,7 @@
       <div class="modal-footer" style="background: var(--bg-surface-alt); display:flex; justify-content:flex-end; gap:10px;">
         <button type="button" class="btn btn-secondary btn-modal-dismiss" id="btnCancelDeleteEvent">Cancel</button>
         <button type="button" class="btn btn-danger" id="btnConfirmDeleteEvent" style="background: #dc2626; color: white; border: none; font-weight: 600;">
-          🗑️ Yes, Delete Event
+          <i data-lucide="trash-2"></i> Yes, Delete Event
         </button>
       </div>
     </div>
@@ -832,7 +840,7 @@
   <div class="modal-backdrop" id="hostLinkQrModal" style="z-index: 1000;">
     <div class="modal-card" style="max-width: 420px;">
       <div class="modal-header">
-        <h3 class="modal-title">📱 Set Up Attendance Taker's Phone</h3>
+        <h3 class="modal-title"><i data-lucide="smartphone"></i> Set Up Attendance Taker's Phone</h3>
         <button class="modal-close">&times;</button>
       </div>
       <div class="modal-body" style="text-align: center;">
@@ -858,7 +866,7 @@
   <div class="modal-backdrop" id="reviewAttendanceModal">
     <div class="modal-card" style="max-width: 520px;">
       <div class="modal-header">
-        <h3 class="modal-title">🔎 Review Flagged Check-In</h3>
+        <h3 class="modal-title"><i data-lucide="search-check"></i> Review Flagged Check-In</h3>
         <button class="modal-close">&times;</button>
       </div>
       <form id="reviewAttendanceForm">
@@ -871,10 +879,10 @@
           </div>
         </div>
         <div class="modal-footer" style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">
-          <button type="button" class="btn btn-ghost btn-sm" id="btnReviewReject" style="color:var(--accent-rose);">✕ Reject &amp; Remove</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnReviewReject" style="color:var(--accent-rose);"><i data-lucide="x"></i> Reject &amp; Remove</button>
           <div style="display:flex; gap:8px;">
             <button type="button" class="btn btn-secondary btn-modal-dismiss">Cancel</button>
-            <button type="button" class="btn btn-primary" id="btnReviewApprove">✓ Approve</button>
+            <button type="button" class="btn btn-primary" id="btnReviewApprove"><i data-lucide="check"></i> Approve</button>
           </div>
         </div>
       </form>
@@ -885,7 +893,7 @@
   <div class="modal-backdrop" id="manualMarkModal">
     <div class="modal-card" style="max-width: 480px;">
       <div class="modal-header">
-        <h3 class="modal-title">✍️ Mark Present Manually</h3>
+        <h3 class="modal-title"><i data-lucide="pen-line"></i> Mark Present Manually</h3>
         <button class="modal-close">&times;</button>
       </div>
       <form id="manualMarkForm">
@@ -912,7 +920,7 @@
     <div class="modal-card modal-card-hosts">
       <div class="modal-header">
         <div>
-          <h3 class="modal-title">👥 Assign Attendance Takers</h3>
+          <h3 class="modal-title"><i data-lucide="users"></i> Assign Attendance Takers</h3>
           <div class="hosts-modal-header-desc" id="hostsModalEventSubtitle">
             Authorize designated staff members to take attendance by broadcasting rotating QR codes on their mobile screens.
           </div>
@@ -923,15 +931,15 @@
       <!-- Dedicated View Filter Tabs (Authorized vs All Staff) -->
       <div class="hosts-view-switcher">
         <button type="button" class="hosts-view-pill active" id="btnFilterAuthorizedHosts" data-mode="authorized">
-          ⭐ Assigned Attendance Takers <span class="badge badge-success" id="hostsAuthTabCount">0</span>
+          <i data-lucide="star"></i> Assigned Attendance Takers <span class="badge badge-success" id="hostsAuthTabCount">0</span>
         </button>
         <button type="button" class="hosts-view-pill" id="btnFilterAllHosts" data-mode="all">
-          👥 All Staff Directory <span class="badge badge-neutral" id="hostsAllStaffTabCount">0</span>
+          <i data-lucide="users"></i> All Staff Directory <span class="badge badge-neutral" id="hostsAllStaffTabCount">0</span>
         </button>
       </div>
 
       <div class="hosts-toolbar">
-        <input type="text" class="form-control hosts-search-input" id="hostsSearchInput" placeholder="🔍 Search by name, code, division..." title="Filter staff members" aria-label="Filter staff members" />
+        <input type="text" class="form-control hosts-search-input" id="hostsSearchInput" placeholder="Search by name, code, division..." title="Filter staff members" aria-label="Filter staff members" />
         <div class="hosts-quick-actions">
           <button type="button" class="btn btn-secondary btn-sm" id="btnSelectAllHosts">Select All Staff</button>
           <button type="button" class="btn btn-ghost btn-sm" id="btnDeselectAllHosts">Deselect All</button>
@@ -958,7 +966,7 @@
 
       <div class="modal-footer" style="justify-content: space-between;">
         <div style="font-size:0.75rem; color:var(--text-secondary);">
-          🔒 QR codes rotate dynamically every 20s. Screenshots expire automatically.
+          <i data-lucide="lock"></i> QR codes rotate dynamically every 20s. Screenshots expire automatically.
         </div>
         <div style="display: flex; gap: 8px;">
           <button type="button" class="btn btn-secondary btn-modal-dismiss">Cancel</button>
@@ -983,7 +991,7 @@
         <div class="modal-body">
           <!-- Branch Transfer Highlight Banner -->
           <div id="memberTransferBanner" style="display:none; margin-bottom: var(--space-md); padding: 12px 14px; background: rgba(99, 102, 241, 0.08); border-left: 4px solid var(--accent-indigo, #6366f1); border-radius: var(--radius-sm); font-size: 0.88rem;">
-            🏢 <strong>Branch Transfer Mode:</strong> Reassigning branch for <span id="transferStaffName" style="font-weight:700;"></span> (<span id="transferStaffCode" style="font-family:monospace;"></span>).<br />
+            <i data-lucide="building-2"></i> <strong>Branch Transfer Mode:</strong> Reassigning branch for <span id="transferStaffName" style="font-weight:700;"></span> (<span id="transferStaffCode" style="font-family:monospace;"></span>).<br />
             <span style="color:var(--text-secondary); font-size: 0.82rem;">Current Allocation: <strong id="currentBranchDisplay"></strong></span>
           </div>
 
@@ -1049,7 +1057,7 @@
   <div class="modal-backdrop" id="orgStructureModal">
     <div class="modal-card modal-card-lg">
       <div class="modal-header">
-        <h3 class="modal-title">🏢 Divisions &amp; Branches</h3>
+        <h3 class="modal-title"><i data-lucide="building-2"></i> Divisions &amp; Branches</h3>
         <button class="modal-close">&times;</button>
       </div>
       <div class="modal-body">
@@ -1073,7 +1081,7 @@
   <div class="modal-backdrop" id="bulkImportModal">
     <div class="modal-card modal-card-lg">
       <div class="modal-header">
-        <h3 class="modal-title">📥 Bulk Import Member Roster</h3>
+        <h3 class="modal-title"><i data-lucide="file-down"></i> Bulk Import Member Roster</h3>
         <button class="modal-close">&times;</button>
       </div>
       <div class="modal-body">
@@ -1084,7 +1092,7 @@
 
         <div style="display: flex; gap: var(--space-md); align-items: center; margin-bottom: var(--space-md); flex-wrap: wrap;">
           <button type="button" class="btn btn-secondary btn-sm" id="btnDownloadCsvSample">
-            📄 Download Sample CSV Template
+            <i data-lucide="file-text"></i> Download Sample CSV Template
           </button>
           <span style="font-size: 0.8rem; color: var(--color-text-muted);">
             Columns: <code>FullName, MemberCode, Role, Division, Branch, PhoneNumber</code>
@@ -1093,7 +1101,7 @@
 
         <div class="bulk-dropzone" id="csvDropzone" style="border: 2px dashed var(--color-border); border-radius: var(--radius-lg); padding: var(--space-xl); text-align: center; background: var(--color-bg-secondary); cursor: pointer; transition: all 0.2s;">
           <input type="file" id="csvFileInput" accept=".csv,text/csv" style="display: none;" />
-          <div style="font-size: 2.2rem; margin-bottom: var(--space-xs);">📁</div>
+          <div style="font-size: 2.2rem; margin-bottom: var(--space-xs);"><i data-lucide="folder-open"></i></div>
           <div style="font-weight: 600; color: var(--color-text-primary); margin-bottom: 4px;">Click to select or drag &amp; drop CSV file</div>
           <div style="font-size: 0.8rem; color: var(--color-text-muted);">Supports standard CSV files (UTF-8 format)</div>
         </div>
@@ -1135,7 +1143,7 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary btn-modal-dismiss">Cancel</button>
         <button type="button" class="btn btn-primary" id="btnConfirmBulkImport" disabled>
-          🚀 Confirm &amp; Import Roster
+          <i data-lucide="file-up"></i> Confirm &amp; Import Roster
         </button>
       </div>
     </div>
@@ -1153,8 +1161,8 @@
           <div class="form-group">
             <label class="form-label" for="runModeSelect">Data Engine Mode</label>
             <select id="runModeSelect" class="form-control form-select" title="Data engine mode" aria-label="Data engine mode">
-              <option value="supabase">⚡ Live Supabase Cloud Database</option>
-              <option value="demo">🧪 Test/Demo Mode (Local Storage)</option>
+              <option value="supabase">Live Supabase Cloud Database</option>
+              <option value="demo">Test/Demo Mode (Local Storage)</option>
             </select>
           </div>
 
@@ -1167,13 +1175,13 @@
             <label class="form-label" for="supabaseAnonKey">Supabase Anon Public API Key</label>
             <input type="password" id="supabaseAnonKey" class="form-control" placeholder="eyJhbGciOiJIUzI1NiIsIn..." />
             <div class="form-hint">
-              🛡️ Safe to enter in frontend. Service-role keys must NEVER be placed here.
+              <i data-lucide="shield"></i> Safe to enter in frontend. Service-role keys must NEVER be placed here.
             </div>
           </div>
 
           <div class="test-conn-row">
             <button type="button" class="btn btn-secondary btn-sm" id="btnTestSupabase">
-              🔍 Test Connection
+              <i data-lucide="search"></i> Test Connection
             </button>
             <div id="testConnStatus" class="test-conn-status"></div>
           </div>
@@ -1199,7 +1207,7 @@ CREATE OR REPLACE FUNCTION submit_attendance(...) ...
 
           <div class="settings-danger-row">
             <button type="button" class="btn btn-ghost btn-sm btn-danger-ghost" id="btnResetDemoData">
-              ⚠️ Reset Local Demo Data
+              <i data-lucide="triangle-alert"></i> Reset Local Demo Data
             </button>
           </div>
         </div>
@@ -1217,6 +1225,7 @@ CREATE OR REPLACE FUNCTION submit_attendance(...) ...
 
   <!-- App Bootstrap -->
   <script type="module">
+    import '/js/icons.js';
     import { initAdminPortal } from '/js/admin.js';
     import { initDesktopInstall } from '/js/pwa-install.js';
     document.addEventListener('DOMContentLoaded', () => {

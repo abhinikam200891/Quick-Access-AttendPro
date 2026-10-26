@@ -212,7 +212,8 @@ async function loadEventAndBootstrap() {
     if (event.location_required) {
       triggerGpsCheck(false); // Non-blocking initial check
     } else {
-      updateGpsIndicator('verified', 'GPS check optional for this event');
+      updateGpsIndicator('not-required', 'This event does not check your location.');
+      document.getElementById('btnRetryGps')?.classList.add('is-hidden');
     }
 
     if (loadingOverlay) {
@@ -594,7 +595,7 @@ async function triggerGpsCheck(isManualClick = true) {
       return { ok: false, message: geo.message, code: geo.code };
     }
 
-    const note = geo.flags.length > 0 ? ' • ⚠️ Will be flagged for admin review' : '';
+    const note = geo.flags.length > 0 ? ' • Will be flagged for admin review' : '';
     updateGpsIndicator(
       'verified',
       `GPS Verified: At venue (${formatDistance(geo.distance)} from center, ${accuracyText}, radius ${event.radius_meters}m)${note}`
@@ -662,9 +663,12 @@ function updateGpsIndicator(status, message) {
 
   if (!dot || !title || !sub) return;
 
-  dot.className = `radar-dot ${status} ${status === 'locating' ? 'pulsing' : ''}`;
+  dot.className = `radar-dot ${status === 'not-required' ? 'verified' : status} ${status === 'locating' ? 'pulsing' : ''}`;
 
-  if (status === 'locating') {
+  if (status === 'not-required') {
+    title.textContent = 'Location Not Needed';
+    sub.textContent = message;
+  } else if (status === 'locating') {
     title.textContent = 'Verifying Location...';
     sub.textContent = message;
   } else if (status === 'verified') {
@@ -822,6 +826,8 @@ function setupFormListeners() {
             sessionStorage.removeItem(`attendpro_scan_ticket:${checkinState.eventId}`);
           } catch (e) {}
           showAttendancePass(result.data, { alreadyRecorded: Boolean(result.already_recorded) });
+        } else if (ALREADY_RECORDED_CODES.has(result.code)) {
+          showAlreadyRecordedNotice(result.message, result.code);
         } else {
           showRejectionNotice(result.message || 'Validation failed. Please verify your details and retry.', result.code);
         }
@@ -845,17 +851,22 @@ function showAttendancePass(data, { alreadyRecorded = false } = {}) {
 
   const titleEl = document.getElementById('passVerifiedTitle');
   const subtitleEl = document.getElementById('passVerifiedSubtitle');
-  if (titleEl) titleEl.textContent = isCheckOut ? 'Check-Out Recorded!' : 'Attendance Verified!';
+  if (titleEl) {
+    if (alreadyRecorded) titleEl.textContent = isCheckOut ? 'You\'re Already Checked Out' : 'You\'re Already Checked In';
+    else titleEl.textContent = isCheckOut ? 'Check-Out Recorded!' : 'Attendance Verified!';
+  }
   if (subtitleEl) {
+    const recordedAt = isCheckOut ? data.check_out_time : data.check_in_time;
     subtitleEl.textContent = alreadyRecorded
-      ? 'Already recorded a moment ago. This is your existing receipt.'
+      ? `Nothing more to do. Recorded at ${recordedAt}. This is your existing pass.`
       : 'Official Digital Receipt Recorded';
   }
+  passContainer?.classList.toggle('is-already-recorded', alreadyRecorded);
 
   // Late arrival / flagged-for-review note
   const notes = [];
-  if (data.is_late && !isCheckOut) notes.push('⏰ Marked late');
-  if (data.verification_status === 'FLAGGED') notes.push('🔎 Location will be reviewed by the admin');
+  if (data.is_late && !isCheckOut) notes.push('Marked late');
+  if (data.verification_status === 'FLAGGED') notes.push('Location will be reviewed by the admin');
   const noteEl = document.getElementById('passStatusNote');
   if (noteEl) {
     noteEl.textContent = notes.join(' • ');
@@ -896,10 +907,10 @@ function showAttendancePass(data, { alreadyRecorded = false } = {}) {
   if (passHostField && passVerifiedBy) {
     if (data.check_in_mode === 'HOST_SELF') {
       passHostField.style.display = 'block';
-      passVerifiedBy.innerHTML = '⭐ <strong>Attendance taker</strong> (self check-in)';
+      passVerifiedBy.innerHTML = '<i data-lucide="star"></i> <strong>Attendance taker</strong> (self check-in)';
     } else if (data.host_name || data.host_member_code) {
       passHostField.style.display = 'block';
-      passVerifiedBy.innerHTML = `📲 <strong>${escapeHtml(data.host_name || 'Attendance taker')}</strong> (${escapeHtml(data.host_member_code || '')}) &bull; ${escapeHtml(data.host_station || 'Station')}`;
+      passVerifiedBy.innerHTML = `<i data-lucide="smartphone"></i> <strong>${escapeHtml(data.host_name || 'Attendance taker')}</strong> (${escapeHtml(data.host_member_code || '')}) &bull; ${escapeHtml(data.host_station || 'Station')}`;
     } else {
       passHostField.style.display = 'block';
       passVerifiedBy.textContent = data.check_in_mode === 'ADMIN_MANUAL' ? 'Manual entry by administrator' : 'Verified';
@@ -914,15 +925,17 @@ function showAttendancePass(data, { alreadyRecorded = false } = {}) {
     try { navigator.vibrate([60, 40, 60]); } catch (e) {}
   }
 
-  // Trigger celebration confetti
-  try {
-    confetti({
-      particleCount: 80,
-      spread: 70,
-      origin: { y: 0.6 }
-    });
-  } catch (e) {
-    // Confetti is purely decorative
+  // Trigger celebration confetti (only for a new record)
+  if (!alreadyRecorded) {
+    try {
+      confetti({
+        particleCount: 80,
+        spread: 70,
+        origin: { y: 0.6 }
+      });
+    } catch (e) {
+      // Confetti is purely decorative
+    }
   }
 
   // Save / Download Pass as Image (Canvas PNG)
@@ -1073,6 +1086,7 @@ function showRejectionNotice(errorMessage, code = null) {
   const btnScan = document.getElementById('btnRejectionScanAgain');
   const btnGps = document.getElementById('btnRejectionRetryGps');
   if (msgEl) msgEl.textContent = errorMessage;
+  setNoticeStyle('error');
 
   const offerScan = SCAN_AGAIN_CODES.has(code);
   const offerGps = RETRY_GPS_CODES.has(code);
@@ -1094,6 +1108,41 @@ function showRejectionNotice(errorMessage, code = null) {
     };
   }
 
+  if (modal) modal.classList.add('active');
+}
+
+// Older servers answer a repeat submission with these codes instead of the existing pass
+const ALREADY_RECORDED_CODES = new Set(['DUPLICATE_ATTENDANCE', 'ALREADY_CHECKED_OUT']);
+
+/**
+ * The notice modal is shared by errors and the "already recorded" confirmation
+ * @param {'error'|'success'} kind
+ */
+function setNoticeStyle(kind, title) {
+  const card = document.querySelector('#rejectionModal .rejection-card');
+  const iconEl = document.getElementById('rejectionIcon');
+  const titleEl = document.getElementById('rejectionTitle');
+  const btnClose = document.getElementById('btnRejectionClose');
+  const isSuccess = kind === 'success';
+  card?.classList.toggle('is-success', isSuccess);
+  if (iconEl) iconEl.innerHTML = `<i data-lucide="${isSuccess ? 'check' : 'x'}"></i>`;
+  if (titleEl) titleEl.textContent = title || 'Couldn\'t Record Your Attendance';
+  if (btnClose) btnClose.textContent = isSuccess ? 'Done' : 'Review & Try Again';
+}
+
+/**
+ * Friendly confirmation for someone who is already checked in (or out)
+ */
+function showAlreadyRecordedNotice(message, code) {
+  const modal = document.getElementById('rejectionModal');
+  const msgEl = document.getElementById('rejectionMessageText');
+  const isCheckOut = code === 'ALREADY_CHECKED_OUT';
+  setNoticeStyle('success', isCheckOut ? 'You\'re Already Checked Out' : 'You\'re Already Checked In');
+  if (msgEl) msgEl.textContent = `${message || ''} Nothing more to do.`.trim();
+  document.getElementById('btnRejectionScanAgain')?.classList.add('is-hidden');
+  document.getElementById('btnRejectionRetryGps')?.classList.add('is-hidden');
+  const btnClose = document.getElementById('btnRejectionClose');
+  if (btnClose) btnClose.onclick = () => modal.classList.remove('active');
   if (modal) modal.classList.add('active');
 }
 

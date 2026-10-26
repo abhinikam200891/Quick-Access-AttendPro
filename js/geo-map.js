@@ -17,7 +17,7 @@ const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyrigh
 function createVenueIcon() {
   return L.divIcon({
     className: 'custom-venue-pin-wrap',
-    html: '<div class="custom-venue-pin"><span>📍</span></div>',
+    html: '<div class="custom-venue-pin"><span><i data-lucide="map-pin"></i></span></div>',
     iconSize: [32, 32],
     iconAnchor: [16, 32],
     popupAnchor: [0, -32]
