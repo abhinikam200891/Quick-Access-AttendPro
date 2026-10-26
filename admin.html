@@ -62,10 +62,6 @@
           <span>First time admin?</span>
           <button type="button" class="auth-link-btn" id="btnGoToRegister">Register Admin User</button>
         </div>
-
-        <div class="auth-footer-note">
-          <span>🛡️ Protected with End-to-End Supabase Authentication &bull; AES Encrypted</span>
-        </div>
       </form>
 
       <!-- Mode 2: Forgot Password Request OTP -->
@@ -204,10 +200,6 @@
         💻 <span class="btn-text">Install App</span>
       </button>
 
-      <button class="btn btn-secondary btn-sm" id="btnAdminCameraScanner" title="Open In-App Camera Barcode/QR Scanner">
-        📷 <span class="btn-text">Camera Scanner</span>
-      </button>
-
       <button class="btn btn-secondary btn-sm" id="btnOpenSettings" title="Configure Supabase & System">
         ⚙️ <span class="btn-text">Settings</span>
       </button>
@@ -215,10 +207,6 @@
       <button class="btn btn-ghost btn-sm btn-sign-out" id="btnAdminSignOut" title="Sign out of Admin Portal">
         🚪 <span class="btn-text">Sign Out</span>
       </button>
-
-      <a href="/checkin.html" target="_blank" class="btn btn-primary btn-sm" title="Open Attendee Check-In Portal">
-        📱 <span class="btn-text">Mobile Portal</span>
-      </a>
     </div>
   </header>
 
@@ -235,7 +223,7 @@
         📈 <span class="tab-label-full">Visual Analytics</span><span class="tab-label-short">Analytics</span>
       </button>
       <button class="tab-btn" data-tab="masters">
-        👥 <span class="tab-label-full">User Master</span><span class="tab-label-short">Users</span>
+        👥 <span class="tab-label-full">Member Directory</span><span class="tab-label-short">Members</span>
       </button>
       <button class="tab-btn" data-tab="audit">
         🛡️ <span class="tab-label-full">Security Audit Logs</span><span class="tab-label-short">Audit</span>
@@ -282,7 +270,7 @@
 
       <div class="stat-card">
         <div>
-          <div class="stat-label">Active Users</div>
+          <div class="stat-label">Active Members</div>
           <div class="stat-value" id="kpiTotalMembers">0</div>
           <div class="stat-hint">Staff &amp; Agents</div>
         </div>
@@ -295,7 +283,7 @@
       <div class="section-header">
         <div>
           <h2 class="section-title">Events &amp; QR Sessions</h2>
-          <div class="section-subtitle">Generate secure QR codes, set GPS geofence radius, and manage check-in windows.</div>
+          <div class="section-subtitle">Assign staff to take attendance with rotating QR codes, set the GPS geofence and manage check-in windows.</div>
         </div>
       </div>
 
@@ -351,9 +339,10 @@
           <div class="filter-group">
             <select class="form-control form-select" id="filterMode" title="Filter attendance by check-in mode" aria-label="Filter attendance by check-in mode">
               <option value="All">All Modes</option>
-              <option value="ATTENDEE_SCAN">📲 Scanned Staff Beacon</option>
-              <option value="HOST_SELF">⭐ Host Self Check-In</option>
-              <option value="VENUE_STATIC_QR">🏢 Venue Static QR</option>
+              <option value="ATTENDEE_SCAN">📲 Staff QR Scan</option>
+              <option value="HOST_SELF">⭐ Attendance Taker (Self)</option>
+              <option value="ADMIN_MANUAL">✍️ Manual (Admin)</option>
+              <option value="VENUE_STATIC_QR">🏢 Legacy Static QR</option>
             </select>
           </div>
           <div class="filter-group">
@@ -381,8 +370,16 @@
           </div>
         </div>
 
-        <!-- Table View -->
-        <div class="table-responsive">
+        <!-- Present / Pending switch -->
+        <div class="filter-bar" style="padding-top: 0;">
+          <div class="role-segmented-control attendance-view-toggle" role="tablist" aria-label="Attendance view">
+            <button type="button" class="btn btn-secondary btn-sm active" id="btnViewPresent" role="tab">✅ Present</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnViewPending" role="tab">⏳ Pending <span class="badge badge-neutral" id="pendingCountBadge">–</span></button>
+          </div>
+        </div>
+
+        <!-- Table View: Present -->
+        <div class="table-responsive" id="presentTableWrap">
           <div class="mobile-table-hint">👉 Swipe horizontally to view full table details</div>
           <table class="data-table">
             <thead>
@@ -391,13 +388,31 @@
                 <th>Role</th>
                 <th>Division &amp; Branch</th>
                 <th>Event Name</th>
-                <th>Check-in Time</th>
+                <th>Check-in / Out</th>
                 <th>Venue Distance</th>
                 <th>Host / Mode</th>
                 <th>Status</th>
               </tr>
             </thead>
             <tbody id="attendanceTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Table View: Pending (eligible members who have not checked in to the selected event) -->
+        <div class="table-responsive is-hidden" id="pendingTableWrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Member &amp; Code</th>
+                <th>Role</th>
+                <th>Division &amp; Branch</th>
+                <th>Mobile</th>
+                <th style="text-align:right;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="pendingTableBody">
               <!-- Dynamically populated -->
             </tbody>
           </table>
@@ -418,9 +433,6 @@
               <option value="All">🌐 All Events (Aggregated)</option>
             </select>
           </div>
-          <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshAnalytics" title="Refresh charts data">
-            🔄 Refresh
-          </button>
         </div>
       </div>
 
@@ -431,7 +443,7 @@
           <div>
             <div class="kpi-subhead">Turnout Rate</div>
             <div class="kpi-metric" id="analyticsKpiTurnout">0 (0%)</div>
-            <div class="kpi-note" id="analyticsKpiTurnoutSub">Authorized users checked in</div>
+            <div class="kpi-note" id="analyticsKpiTurnoutSub">Active members checked in</div>
           </div>
         </div>
 
@@ -458,7 +470,7 @@
           <div>
             <div class="kpi-subhead">Punctuality Index</div>
             <div class="kpi-metric" id="analyticsKpiPunctuality">100% On-Time</div>
-            <div class="kpi-note">Arrived within session window</div>
+            <div class="kpi-note">Scanned check-ins not marked late</div>
           </div>
         </div>
       </div>
@@ -472,7 +484,6 @@
               <h3 class="chart-title">Arrival Velocity Timeline (Rush Curve)</h3>
               <p class="chart-desc">Check-in frequency over the course of the event hours showing peak arrival surges.</p>
             </div>
-            <span class="badge badge-info">Realtime Area</span>
           </div>
           <div class="chart-canvas-container velocity-canvas">
             <canvas id="chartVelocity"></canvas>
@@ -486,7 +497,6 @@
               <h3 class="chart-title">Role Composition</h3>
               <p class="chart-desc">Staff vs Field Agent attendance ratio.</p>
             </div>
-            <span class="badge badge-neutral">Doughnut</span>
           </div>
           <div class="chart-canvas-container">
             <canvas id="chartRole"></canvas>
@@ -500,7 +510,6 @@
               <h3 class="chart-title">Turnout by Division</h3>
               <p class="chart-desc">Participation rate across business departments.</p>
             </div>
-            <span class="badge badge-neutral">Horizontal Bar</span>
           </div>
           <div class="chart-canvas-container">
             <canvas id="chartDivision"></canvas>
@@ -514,7 +523,6 @@
               <h3 class="chart-title">Venue GPS Proximity Distribution</h3>
               <p class="chart-desc">Attendee distance from venue pin at check-in moment.</p>
             </div>
-            <span class="badge badge-neutral">Proximity</span>
           </div>
           <div class="chart-canvas-container">
             <canvas id="chartGeofence"></canvas>
@@ -526,9 +534,8 @@
           <div class="chart-card-header">
             <div>
               <h3 class="chart-title">Arrival Punctuality Distribution</h3>
-              <p class="chart-desc">Early birds vs on-time arrivals vs late check-ins.</p>
+              <p class="chart-desc">Check-ins before the event start, on time, or after each event's late threshold. Manual entries are not counted.</p>
             </div>
-            <span class="badge badge-neutral">Punctuality</span>
           </div>
           <div class="chart-canvas-container">
             <canvas id="chartPunctuality"></canvas>
@@ -541,16 +548,16 @@
     <section id="tab-masters" class="tab-content-panel">
       <div class="section-header">
         <div>
-          <h2 class="section-title">User Master Directory</h2>
+          <h2 class="section-title">Member Directory</h2>
           <div class="section-subtitle">Manage authorized staff and agent rosters, phone verification records, and activation status.</div>
         </div>
         <div class="section-actions">
-          <span class="badge badge-neutral" id="memberRecordCount">0 users</span>
+          <span class="badge badge-neutral" id="memberRecordCount">0 members</span>
           <button class="btn btn-secondary btn-sm" id="btnOpenBulkImport">
             📥 Bulk Import CSV
           </button>
           <button class="btn btn-primary btn-sm" id="btnOpenAddMember">
-            + Add New User
+            + Add Member
           </button>
         </div>
       </div>
@@ -567,7 +574,7 @@
 
           <!-- 2. Role Filter -->
           <div class="filter-group">
-            <select class="form-control form-select" id="filterMemberRole" title="Filter users by role" aria-label="Filter users by role">
+            <select class="form-control form-select" id="filterMemberRole" title="Filter members by role" aria-label="Filter members by role">
               <option value="All">All Roles</option>
               <option value="Staff">👔 Staff Only</option>
               <option value="Agent">🤝 Agent Only</option>
@@ -576,21 +583,21 @@
 
           <!-- 3. Division Filter -->
           <div class="filter-group">
-            <select class="form-control form-select" id="filterMemberDivision" title="Filter users by division" aria-label="Filter users by division">
+            <select class="form-control form-select" id="filterMemberDivision" title="Filter members by division" aria-label="Filter members by division">
               <option value="All">All Divisions</option>
             </select>
           </div>
 
           <!-- 4. Branch Filter (Cascades with Division) -->
           <div class="filter-group">
-            <select class="form-control form-select" id="filterMemberBranch" title="Filter users by branch" aria-label="Filter users by branch">
+            <select class="form-control form-select" id="filterMemberBranch" title="Filter members by branch" aria-label="Filter members by branch">
               <option value="All">All Branches</option>
             </select>
           </div>
 
           <!-- 5. Status Filter -->
           <div class="filter-group">
-            <select class="form-control form-select" id="filterMemberStatus" title="Filter users by activation status" aria-label="Filter users by activation status">
+            <select class="form-control form-select" id="filterMemberStatus" title="Filter members by status" aria-label="Filter members by status">
               <option value="All">All Statuses</option>
               <option value="active">Active Only</option>
               <option value="inactive">Inactive Only</option>
@@ -599,7 +606,7 @@
 
           <!-- 6. Search Bar -->
           <div class="filter-group filter-search-group">
-            <input type="text" class="form-control" id="filterMemberSearch" placeholder="🔍 Search name, code, or phone..." title="Search users directory" aria-label="Search users directory" />
+            <input type="text" class="form-control" id="filterMemberSearch" placeholder="🔍 Search name, code, or phone..." title="Search members" aria-label="Search members" />
           </div>
 
           <!-- 7. Reset Filters Button -->
@@ -693,7 +700,7 @@
             </div>
 
             <div class="form-group">
-              <label class="form-label" for="eventPermittedRoles">Permitted Roles</label>
+              <label class="form-label" for="eventPermittedRoles">Permitted Roles <span class="required">*</span></label>
               <select id="eventPermittedRoles" class="form-control form-select" title="Permitted attendee roles" aria-label="Permitted attendee roles">
                 <option value="All">All (Staff &amp; Agents)</option>
                 <option value="Staff">Staff Only</option>
@@ -704,20 +711,33 @@
 
           <div class="form-row-2col">
             <div class="form-group">
-              <label class="form-label" for="eventStartTime">Check-in Opens (Start)</label>
+              <label class="form-label" for="eventStartTime">Check-in Opens (Start) <span class="required">*</span></label>
               <input type="time" id="eventStartTime" class="form-control" value="08:00" required />
             </div>
 
             <div class="form-group">
-              <label class="form-label" for="eventEndTime">Check-in Closes (End)</label>
+              <label class="form-label" for="eventEndTime">Check-in Closes (End) <span class="required">*</span></label>
               <input type="time" id="eventEndTime" class="form-control" value="20:00" required />
+            </div>
+          </div>
+
+          <div class="form-row-2col">
+            <div class="form-group">
+              <label class="form-label" for="eventLateGrace">Mark Late After (minutes past start)</label>
+              <input type="number" id="eventLateGrace" class="form-control" value="15" min="0" max="600" placeholder="15" />
+            </div>
+            <div class="form-group coords-checkbox-wrap">
+              <label class="checkbox-label">
+                <input type="checkbox" id="eventCheckoutEnabled" />
+                <strong>Enable Check-Out</strong>
+              </label>
             </div>
           </div>
 
           <!-- Geofence Coordinates -->
           <div class="form-group geofence-box">
             <div class="geofence-header">
-              <label class="form-label label-no-margin">📍 Venue GPS Coordinates &amp; Geofence</label>
+              <label class="form-label label-no-margin">📍 Venue GPS Coordinates &amp; Geofence <span class="required" title="Required when the geofence GPS check is on">*</span></label>
               <button type="button" class="btn btn-secondary btn-sm" id="btnDetectAdminGps">
                 🎯 Use Current GPS Location
               </button>
@@ -741,8 +761,8 @@
 
             <div class="form-row-coords coords-spaced">
               <div>
-                <label class="form-label" for="eventRadius">Allowed Radius (Meters)</label>
-                <input type="number" id="eventRadius" class="form-control" value="50" min="10" max="5000" />
+                <label class="form-label" for="eventRadius">Allowed Radius (Meters) <span class="required">*</span></label>
+                <input type="number" id="eventRadius" class="form-control" value="50" min="10" max="5000" required />
               </div>
               <div class="coords-checkbox-wrap">
                 <label class="checkbox-label">
@@ -756,7 +776,7 @@
 
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary btn-modal-dismiss">Cancel</button>
-          <button type="submit" class="btn btn-primary">Create Event &amp; Generate QR</button>
+          <button type="submit" class="btn btn-primary">Create Event</button>
         </div>
       </form>
     </div>
@@ -789,7 +809,7 @@
             </div>
 
             <div class="form-group">
-              <label class="form-label" for="editEventPermittedRoles">Permitted Roles</label>
+              <label class="form-label" for="editEventPermittedRoles">Permitted Roles <span class="required">*</span></label>
               <select id="editEventPermittedRoles" class="form-control form-select" title="Permitted attendee roles" aria-label="Permitted attendee roles">
                 <option value="All">All (Staff &amp; Agents)</option>
                 <option value="Staff">Staff Only</option>
@@ -800,20 +820,33 @@
 
           <div class="form-row-2col">
             <div class="form-group">
-              <label class="form-label" for="editEventStartTime">Check-in Opens (Start)</label>
+              <label class="form-label" for="editEventStartTime">Check-in Opens (Start) <span class="required">*</span></label>
               <input type="time" id="editEventStartTime" class="form-control" required />
             </div>
 
             <div class="form-group">
-              <label class="form-label" for="editEventEndTime">Check-in Closes (End)</label>
+              <label class="form-label" for="editEventEndTime">Check-in Closes (End) <span class="required">*</span></label>
               <input type="time" id="editEventEndTime" class="form-control" required />
+            </div>
+          </div>
+
+          <div class="form-row-2col">
+            <div class="form-group">
+              <label class="form-label" for="editEventLateGrace">Mark Late After (minutes past start)</label>
+              <input type="number" id="editEventLateGrace" class="form-control" value="15" min="0" max="600" placeholder="15" />
+            </div>
+            <div class="form-group coords-checkbox-wrap">
+              <label class="checkbox-label">
+                <input type="checkbox" id="editEventCheckoutEnabled" />
+                <strong>Enable Check-Out</strong>
+              </label>
             </div>
           </div>
 
           <!-- Geofence Coordinates & Radius Adjustments -->
           <div class="form-group geofence-box">
             <div class="geofence-header">
-              <label class="form-label label-no-margin">📍 Venue GPS Coordinates &amp; Geofence</label>
+              <label class="form-label label-no-margin">📍 Venue GPS Coordinates &amp; Geofence <span class="required" title="Required when the geofence GPS check is on">*</span></label>
               <button type="button" class="btn btn-secondary btn-sm" id="btnDetectEditGps">
                 🎯 Use Current GPS Location
               </button>
@@ -887,34 +920,25 @@
     </div>
   </div>
 
-  <!-- 2. QR CODE PREVIEW & PRINT MODAL -->
-  <div class="modal-backdrop" id="qrModal">
-    <div class="modal-card">
+  <!-- 2A. PRIVATE LINK QR (attendance taker scans it with their own phone) -->
+  <!-- Opens on top of the Assign Attendance Takers window -->
+  <div class="modal-backdrop" id="hostLinkQrModal" style="z-index: 1000;">
+    <div class="modal-card" style="max-width: 420px;">
       <div class="modal-header">
-        <h3 class="modal-title" id="qrModalEventTitle">Event QR Code</h3>
+        <h3 class="modal-title">📱 Set Up Attendance Taker's Phone</h3>
         <button class="modal-close">&times;</button>
       </div>
-      <div class="modal-body qr-modal-body">
-        <div class="qr-canvas-box">
-          <canvas id="qrCodeCanvas"></canvas>
-        </div>
-
-        <p class="qr-info-text">
-          Display or print this QR code at the venue entrance. Attendees scan with their phone camera to open the portal.
+      <div class="modal-body" style="text-align: center;">
+        <p style="margin: 0 0 4px; font-weight: 700; color: var(--text-primary);" id="hostLinkQrName"></p>
+        <p style="margin: 0 0 14px; color: var(--text-secondary); font-size: 0.85rem;" id="hostLinkQrStation"></p>
+        <canvas id="hostLinkQrCanvas" style="max-width: 100%;"></canvas>
+        <p style="margin: 14px 0 12px; color: var(--text-secondary); font-size: 0.85rem; text-align: left;">
+          Ask the attendance taker to scan this with their own phone's camera. Their QR opens and stays locked to that phone.
+          Don't scan it yourself: the first phone that opens the link is the one that gets locked to it.
         </p>
-
-        <div class="qr-modal-actions">
-          <button class="btn btn-primary btn-sm" id="btnPrintQrSignage">
-            🖨️ Print Venue Standee Signage
-          </button>
-          <button class="btn btn-secondary btn-sm" id="btnDownloadQr">
-            📥 Download PNG
-          </button>
-        </div>
-
-        <div class="qr-link-copy-box">
-          <input type="text" id="qrDirectLink" class="qr-link-input" readonly aria-label="Direct QR check-in link" title="Direct QR check-in link" placeholder="Direct QR check-in link" />
-          <button type="button" class="btn btn-secondary btn-sm" id="btnCopyQrLink">Copy</button>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="hostLinkQrUrl" class="form-control" readonly aria-label="Private link" style="font-size: 0.75rem;" />
+          <button type="button" class="btn btn-secondary btn-sm" id="btnCopyHostLinkQrUrl">Copy</button>
         </div>
       </div>
       <div class="modal-footer">
@@ -923,12 +947,38 @@
     </div>
   </div>
 
+  <!-- 2. MANUAL ATTENDANCE MODAL (admin marks a pending member present) -->
+  <div class="modal-backdrop" id="manualMarkModal">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3 class="modal-title">✍️ Mark Present Manually</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <form id="manualMarkForm">
+        <div class="modal-body">
+          <p style="margin: 0 0 12px; color: var(--text-secondary);">
+            Marking <strong id="manualMarkMemberName">member</strong> present for <strong id="manualMarkEventName">event</strong>.
+            The entry is labelled Manual and recorded in the audit log with your account.
+          </p>
+          <div class="form-group">
+            <label class="form-label" for="manualMarkReason">Reason <span class="required">*</span></label>
+            <textarea id="manualMarkReason" class="form-control" rows="3" required placeholder="e.g. Phone battery dead; verified in person at Gate 2"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-modal-dismiss">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btnConfirmManualMark">Mark Present</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- 2B. AUTHORIZED STAFF ROTATING QR BEACONS MODAL -->
   <div class="modal-backdrop" id="hostsModal">
     <div class="modal-card modal-card-hosts">
       <div class="modal-header">
         <div>
-          <h3 class="modal-title">👥 Assign Staff to Take Attendance (QR Beacons)</h3>
+          <h3 class="modal-title">👥 Assign Attendance Takers</h3>
           <div class="hosts-modal-header-desc" id="hostsModalEventSubtitle">
             Authorize designated staff members to take attendance by broadcasting rotating QR codes on their mobile screens.
           </div>
@@ -963,7 +1013,7 @@
               <th>Staff Member</th>
               <th>Division &amp; Branch</th>
               <th>Designated Station</th>
-              <th style="text-align: right;">Beacon Actions</th>
+              <th style="text-align: right;">Private Link</th>
             </tr>
           </thead>
           <tbody id="hostsTableBody">
@@ -978,7 +1028,7 @@
         </div>
         <div style="display: flex; gap: 8px;">
           <button type="button" class="btn btn-secondary btn-modal-dismiss">Cancel</button>
-          <button type="button" class="btn btn-primary" id="btnSaveAuthorizedHosts">Save &amp; Update Beacons</button>
+          <button type="button" class="btn btn-primary" id="btnSaveAuthorizedHosts">Save Attendance Takers</button>
         </div>
       </div>
     </div>
@@ -989,7 +1039,7 @@
     <div class="modal-card">
       <div class="modal-header">
         <div>
-          <h3 class="modal-title" id="memberModalTitle">Add Master User Record</h3>
+          <h3 class="modal-title" id="memberModalTitle">Add Member</h3>
           <div class="modal-subtitle" id="memberModalSubtitle" style="font-size:0.85rem;color:var(--text-secondary);display:none;margin-top:2px;"></div>
         </div>
         <button class="modal-close">&times;</button>
@@ -1055,7 +1105,7 @@
 
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary btn-modal-dismiss">Cancel</button>
-          <button type="submit" class="btn btn-primary" id="btnSaveMember">Save User</button>
+          <button type="submit" class="btn btn-primary" id="btnSaveMember">Save Member</button>
         </div>
       </form>
     </div>

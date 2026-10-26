@@ -73,21 +73,66 @@ export function populateAnalyticsEventFilter(events) {
 }
 
 /**
- * Recomputes metrics and updates all Chart.js instances
+ * Event currently chosen in the Analytics drop-down
  */
-export function updateVisualAnalytics(state, eventId = 'All') {
+function getSelectedAnalyticsEvent() {
+  return document.getElementById('analyticsEventFilter')?.value || 'All';
+}
+
+/**
+ * Recomputes metrics and updates all Chart.js instances.
+ * Without an explicit event it keeps the one selected in the drop-down,
+ * so live check-ins do not switch the charts back to All Events.
+ */
+export function updateVisualAnalytics(state, eventId = getSelectedAnalyticsEvent()) {
   const filteredAttendance = filterAttendanceForAnalytics(state.attendance, eventId);
-  const totalRoster = state.members ? state.members.filter((m) => m.is_active).length : 0;
+  const events = state.events || [];
+  const scopedEvents = eventId === 'All' ? events : events.filter((e) => e.id === eventId);
 
   // 1. Update KPI Summary Cards
-  renderAnalyticsKpis(filteredAttendance, totalRoster, state.events, eventId);
+  renderAnalyticsKpis(filteredAttendance, scopedEvents, state.members || [], eventId);
 
   // 2. Render / Update Charts
   renderVelocityChart(filteredAttendance);
   renderRoleChart(filteredAttendance);
   renderDivisionChart(filteredAttendance, state.divisions);
   renderGeofenceChart(filteredAttendance);
-  renderPunctualityChart(filteredAttendance, state.events, eventId);
+  renderPunctualityChart(filteredAttendance, events);
+}
+
+/**
+ * Active members allowed to attend an event (its permitted roles)
+ */
+function countEligibleMembers(event, members) {
+  return members.filter((m) => m.is_active && (event.permitted_roles === 'All' || m.role === event.permitted_roles)).length;
+}
+
+/**
+ * Minutes since midnight of an ISO time, on the event's own clock
+ */
+function minutesInZone(iso, timeZone) {
+  const date = new Date(iso);
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date);
+    const get = (type) => Number(parts.find((p) => p.type === type)?.value);
+    return get('hour') * 60 + get('minute');
+  } catch (e) {
+    return date.getHours() * 60 + date.getMinutes();
+  }
+}
+
+/**
+ * 'early' (before the event start), 'late' (saved Late flag), 'onTime', or null for manual entries
+ */
+function arrivalCategory(record, eventsById) {
+  if (record.check_in_mode === 'ADMIN_MANUAL') return null;
+  if (record.is_late) return 'late';
+  const event = eventsById.get(record.event_id);
+  if (event && record.check_in_time) {
+    const [h, m] = String(event.start_time || '0:0').split(':').map(Number);
+    if (minutesInZone(record.check_in_time, event.timezone || 'Asia/Kolkata') < h * 60 + m) return 'early';
+  }
+  return 'onTime';
 }
 
 /**
@@ -101,7 +146,7 @@ function filterAttendanceForAnalytics(records, eventId) {
 /**
  * Render Top Metric Cards for Analytics Tab
  */
-function renderAnalyticsKpis(records, totalRoster, events, eventId) {
+function renderAnalyticsKpis(records, scopedEvents, members, eventId) {
   const totalChecked = records.length;
   const turnoutEl = document.getElementById('analyticsKpiTurnout');
   const turnoutSubEl = document.getElementById('analyticsKpiTurnoutSub');
@@ -109,13 +154,16 @@ function renderAnalyticsKpis(records, totalRoster, events, eventId) {
   const distanceEl = document.getElementById('analyticsKpiDistance');
   const punctualityEl = document.getElementById('analyticsKpiPunctuality');
 
-  // Turnout Percentage
+  // Turnout: check-ins against the members each event was open to (its permitted roles)
+  const eligible = scopedEvents.reduce((sum, event) => sum + countEligibleMembers(event, members), 0);
   if (turnoutEl) {
-    const rate = totalRoster > 0 ? Math.min(100, Math.round((totalChecked / totalRoster) * 100)) : 0;
+    const rate = eligible > 0 ? Math.min(100, Math.round((totalChecked / eligible) * 100)) : 0;
     turnoutEl.textContent = `${totalChecked} (${rate}%)`;
   }
   if (turnoutSubEl) {
-    turnoutSubEl.textContent = `Out of ${totalRoster} authorized users`;
+    turnoutSubEl.textContent = eventId === 'All'
+      ? `Of ${eligible} possible check-ins across ${scopedEvents.length} event${scopedEvents.length === 1 ? '' : 's'}`
+      : `Out of ${eligible} eligible members`;
   }
 
   // Peak Velocity
@@ -143,20 +191,14 @@ function renderAnalyticsKpis(records, totalRoster, events, eventId) {
     }
   }
 
-  // Punctuality Rate
+  // Punctuality: share of scanned check-ins not marked late (manual entries excluded)
   if (punctualityEl) {
-    if (records.length === 0) {
-      punctualityEl.textContent = '100%';
+    const scanned = records.filter((r) => r.check_in_mode !== 'ADMIN_MANUAL');
+    if (scanned.length === 0) {
+      punctualityEl.textContent = 'N/A';
     } else {
-      let onTimeCount = 0;
-      records.forEach((r) => {
-        const checkTime = new Date(r.check_in_time);
-        const hours = checkTime.getHours();
-        // Typically morning sessions open 08:00 - 10:00, count early/on-time
-        if (hours < 11) onTimeCount++;
-      });
-      const punctualityRate = Math.round((onTimeCount / records.length) * 100);
-      punctualityEl.textContent = `${punctualityRate}% On-Time`;
+      const onTimeCount = scanned.filter((r) => !r.is_late).length;
+      punctualityEl.textContent = `${Math.round((onTimeCount / scanned.length) * 100)}% On-Time`;
     }
   }
 }
@@ -499,23 +541,21 @@ function renderGeofenceChart(records) {
 /**
  * 5. PUNCTUALITY & ARRIVAL STATUS (Doughnut Chart)
  */
-function renderPunctualityChart(records, events = [], eventId = 'All') {
+function renderPunctualityChart(records, events = []) {
   const canvas = document.getElementById('chartPunctuality');
   if (!canvas) return;
 
+  // Uses each event's own start time and late threshold, not fixed clock times
+  const eventsById = new Map(events.map((e) => [e.id, e]));
   let early = 0;
   let onTime = 0;
   let late = 0;
 
   records.forEach((r) => {
-    if (!r.check_in_time) return;
-    const checkDate = new Date(r.check_in_time);
-    const minutes = checkDate.getHours() * 60 + checkDate.getMinutes();
-
-    // Standard session start threshold: 09:00 AM (540 mins)
-    if (minutes < 530) early++;
-    else if (minutes <= 570) onTime++;
-    else late++;
+    const category = arrivalCategory(r, eventsById);
+    if (category === 'early') early++;
+    else if (category === 'onTime') onTime++;
+    else if (category === 'late') late++;
   });
 
   const total = early + onTime + late;
@@ -532,7 +572,7 @@ function renderPunctualityChart(records, events = [], eventId = 'All') {
   chartPunctuality = new Chart(canvas, {
     type: 'doughnut',
     data: {
-      labels: ['Early Birds', 'On-Time Arrival', 'Late Window'],
+      labels: ['Before Start', 'On Time', 'Late'],
       datasets: [
         {
           data,

@@ -5,7 +5,6 @@
  */
 
 export const ROTATION_INTERVAL_SECONDS = 20;
-export const DEFAULT_HOST_SECRET_SALT = 'attendpro_beacon_salt_2026';
 
 /**
  * Returns the current time window epoch (e.g. 20-second bucket)
@@ -23,51 +22,35 @@ export function getSecondsRemainingInWindow(nowMs = Date.now()) {
 }
 
 /**
- * Compute HMAC-SHA256 signature using the Web Crypto API
+ * Compute HMAC-SHA256 signature using the Web Crypto API.
+ * Must match host_qr_signature() in supabase/schema.sql: first 16 hex chars of the digest.
+ * Web Crypto only exists on HTTPS (or localhost), so the beacon must be served over HTTPS.
  */
 export async function generateHmacSha256(secretKey, message) {
-  const enc = new TextEncoder();
-  const keyData = enc.encode(secretKey);
-  const msgData = enc.encode(message);
-
-  const cryptoObj = window.crypto || window.msCrypto;
+  const cryptoObj = window.crypto;
   if (!cryptoObj || !cryptoObj.subtle) {
-    // Fallback simple hash for environments without SubtleCrypto
-    return fallbackHash(secretKey + message);
+    throw new Error('Secure QR signing needs HTTPS. Open the beacon link over https://.');
   }
 
-  try {
-    const key = await cryptoObj.subtle.importKey(
-      'raw',
-      keyData,
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign']
-    );
+  const enc = new TextEncoder();
+  const key = await cryptoObj.subtle.importKey(
+    'raw',
+    enc.encode(secretKey),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
 
-    const signature = await cryptoObj.subtle.sign('HMAC', key, msgData);
-    const hashArray = Array.from(new Uint8Array(signature));
-    // 16 hex characters (64-bit compact signature for clean QR URL payload)
-    return hashArray.slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('');
-  } catch (e) {
-    return fallbackHash(secretKey + message);
-  }
-}
-
-function fallbackHash(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash |= 0;
-  }
-  return Math.abs(hash).toString(16).padStart(8, '0').slice(0, 8);
+  const signature = await cryptoObj.subtle.sign('HMAC', key, enc.encode(message));
+  const hashArray = Array.from(new Uint8Array(signature));
+  // 16 hex characters (64-bit compact signature for clean QR URL payload)
+  return hashArray.slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
  * Generates a dynamic QR payload and query params for an authorized host
  */
-export async function generateDynamicQrPayload(eventId, hostCode, secretKey = DEFAULT_HOST_SECRET_SALT, epoch = getCurrentWindowEpoch()) {
+export async function generateDynamicQrPayload(eventId, hostCode, secretKey, epoch = getCurrentWindowEpoch()) {
   const message = `${eventId}:${hostCode}:${epoch}`;
   const sig = await generateHmacSha256(secretKey, message);
 
@@ -92,11 +75,13 @@ export function buildHostCheckInUrl(baseUrl, eventId, hostCode, epoch, sig) {
   return url.toString();
 }
 
+// Windows accepted either side of now (about 60s) for scan delay and clock drift. Matches redeem_host_scan.
+const SCAN_GRACE_WINDOWS = 3;
+
 /**
- * Validates a dynamic token submitted by an attendee
- * Permits current epoch window AND the immediately preceding epoch window (20-40s grace period)
+ * Validates a scanned rotating QR (used by the demo engine; live mode verifies in redeem_host_scan)
  */
-export async function verifyDynamicQrToken(eventId, hostCode, secretKey = DEFAULT_HOST_SECRET_SALT, submittedEpoch, submittedSig) {
+export async function verifyDynamicQrToken(eventId, hostCode, secretKey, submittedEpoch, submittedSig) {
   const currentEpoch = getCurrentWindowEpoch();
   const epochNum = Number(submittedEpoch);
 
@@ -108,8 +93,7 @@ export async function verifyDynamicQrToken(eventId, hostCode, secretKey = DEFAUL
     };
   }
 
-  // Grace period: allow current window or previous window (to accommodate scanning latency)
-  const isFresh = (epochNum === currentEpoch || epochNum === (currentEpoch - 1));
+  const isFresh = Math.abs(currentEpoch - epochNum) <= SCAN_GRACE_WINDOWS;
   if (!isFresh) {
     const ageSeconds = (currentEpoch - epochNum) * ROTATION_INTERVAL_SECONDS;
     return {

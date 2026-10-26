@@ -343,6 +343,35 @@
   margin-bottom: 14px;
 }
 
+.host-self-phone-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+  margin-bottom: 6px;
+}
+
+.host-self-phone-label .required {
+  color: #fb7185;
+  margin-left: 2px;
+}
+
+.host-self-phone {
+  width: 100%;
+  padding: 11px 14px;
+  margin-bottom: 12px;
+  font-size: 1rem;
+  color: #f1f5f9;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 10px;
+}
+
+.host-self-phone:focus {
+  outline: 2px solid #38bdf8;
+  outline-offset: 1px;
+}
+
 .btn-host-self-checkin {
   width: 100%;
   padding: 13px 18px;
@@ -429,12 +458,44 @@
   letter-spacing: 0.5px;
 }
 
-/* Footer note */
-.host-footer-note {
-  font-size: 0.75rem;
-  color: #94a3b8;
+/* Check-in window status tile */
+#windowStatusBox.is-open .host-metric-val {
+  color: #059669;
+}
+
+#windowStatusBox.is-waiting .host-metric-val {
+  color: #d97706;
+}
+
+#windowStatusBox.is-closed .host-metric-val {
+  color: #dc2626;
+}
+
+/* QR covered while check-in is not open */
+.qr-closed-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px;
   text-align: center;
-  margin-top: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  border-radius: var(--radius-lg);
+  color: #0f172a;
+  font-size: 0.85rem;
+}
+
+.qr-closed-overlay strong {
+  font-size: 1.05rem;
+}
+
+/* Page rules such as .host-metrics-bar { display: flex } load after common.css and would
+   otherwise override the shared .is-hidden helper */
+.host-main .is-hidden {
+  display: none !important;
 }
 
 /* Device Lock Card Styles */

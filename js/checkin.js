@@ -6,23 +6,28 @@
 
 import confetti from 'canvas-confetti';
 import { dbService } from './db-service.js';
-import { calculateDistanceMeters, formatDistance, getCurrentPosition } from './haversine.js';
+import { acquireBestPosition, evaluateGeofence, formatDistance } from './haversine.js';
 import { initAttendeeRadarMap } from './geo-map.js';
 import { openInAppScanner } from './camera-scanner.js';
 import { soundController } from './audio-chime.js';
+
+// A GPS fix older than this is refreshed before submitting
+const GPS_REFRESH_AFTER_MS = 60000;
 
 // Controller State
 const checkinState = {
   event: null,
   eventId: null,
-  qrToken: null,
   hostCode: null,
   windowEpoch: null,
   tokenSignature: null,
+  scanTicket: null, // { id, expiresAt } from redeemHostScan
   hostInfo: null,
   divisions: [],
   branchMembers: [], // Members loaded for currently selected branch and role
+  selectedMemberId: null, // Person picked in the search field
   selectedRole: 'Staff',
+  action: 'CHECK_IN', // 'CHECK_IN' | 'CHECK_OUT'
   currentPosition: null,
   radarMap: null,
   gpsStatus: 'idle', // 'idle' | 'locating' | 'verified' | 'warning' | 'error'
@@ -30,56 +35,79 @@ const checkinState = {
 };
 
 export async function initCheckInPortal() {
-  setupDeviceViewToggle();
   parseQueryParams();
+  setupActionToggle();
   setupRoleToggle();
-  setupMemberSelectSync();
+  setupPersonPicker();
   setupFormListeners();
   setupScannerAction();
 
-  // If no eventId in query string, auto-load the single active event
-  if (!checkinState.eventId) {
-    try {
-      const activeEvents = await dbService.getEvents({ isActive: true });
-      if (activeEvents && activeEvents.length > 0) {
-        checkinState.eventId = activeEvents[0].id;
-        checkinState.qrToken = activeEvents[0].qr_token;
-      } else {
-        showNoActiveEventState();
-        return;
-      }
-    } catch (err) {
-      console.error('Failed to auto-load active event:', err);
-      showNoActiveEventState();
-      return;
-    }
+  // Check-in is only possible by scanning a staff member's rotating QR (no static venue QR)
+  if (!checkinState.eventId || !checkinState.hostCode) {
+    showErrorState(
+      'Scan a Staff QR Code',
+      'To mark attendance, scan the live QR code shown on an authorized staff member\'s phone at the venue.'
+    );
+    return;
   }
+
+  const ticketOk = await ensureScanTicket();
+  if (!ticketOk) return;
 
   await loadEventAndBootstrap();
 }
 
 /**
- * Handle Desktop / Mobile view preview toggle on computer
+ * Turns the scanned QR (event, host, window, signature) into a one-time ticket on the server.
+ * The ticket is kept for this browser tab so a reload does not need a new scan.
  */
-function setupDeviceViewToggle() {
-  const toggleBtn = document.getElementById('btnToggleDeviceView');
-  const iconEl = document.getElementById('viewToggleIcon');
-  const labelEl = document.getElementById('viewToggleLabel');
-  if (!toggleBtn) return;
+async function ensureScanTicket() {
+  const storageKey = `attendpro_scan_ticket:${checkinState.eventId}`;
+  const now = Date.now();
 
-  toggleBtn.onclick = () => {
-    const isMobileSim = document.body.classList.toggle('force-mobile-view');
-    if (isMobileSim) {
-      if (iconEl) iconEl.textContent = '🖥️';
-      if (labelEl) labelEl.textContent = 'Desktop View';
-      toggleBtn.title = 'Switch back to wide desktop resolution view';
-    } else {
-      if (iconEl) iconEl.textContent = '📱';
-      if (labelEl) labelEl.textContent = 'Phone View';
-      toggleBtn.title = 'Preview as phone simulator on computer';
+  // Fresh scan in the URL wins over a stored ticket
+  if (checkinState.windowEpoch !== null && checkinState.tokenSignature) {
+    const result = await dbService.redeemHostScan({
+      eventId: checkinState.eventId,
+      hostCode: checkinState.hostCode,
+      windowEpoch: checkinState.windowEpoch,
+      signature: checkinState.tokenSignature
+    });
+
+    // Drop the one-time QR values from the address bar so sharing or reloading this page cannot reuse them
+    const cleanParams = new URLSearchParams({ event: checkinState.eventId, host: checkinState.hostCode });
+    history.replaceState(null, '', `${window.location.pathname}?${cleanParams.toString()}`);
+
+    if (!result?.success) {
+      showErrorState('QR Code Not Accepted', result?.message || 'This QR code could not be verified. Scan the live code on the staff member\'s phone.');
+      return false;
     }
-  };
+
+    checkinState.scanTicket = { id: result.ticket, expiresAt: new Date(result.expires_at).getTime() };
+    checkinState.hostInfo = {
+      full_name: result.host_name,
+      member_code: result.host_member_code,
+      station_name: result.host_station
+    };
+    try {
+      sessionStorage.setItem(storageKey, JSON.stringify({ ...checkinState.scanTicket, host: checkinState.hostInfo }));
+    } catch (e) {}
+    return true;
+  }
+
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(storageKey) || 'null');
+    if (stored && stored.expiresAt > now) {
+      checkinState.scanTicket = { id: stored.id, expiresAt: stored.expiresAt };
+      checkinState.hostInfo = stored.host || null;
+      return true;
+    }
+  } catch (e) {}
+
+  showErrorState('Scan Again', 'Your scan has expired. Scan the live QR code on the staff member\'s phone again.');
+  return false;
 }
+
 
 /**
  * Extract event_id, token, and dynamic host parameters from URL query string
@@ -87,7 +115,6 @@ function setupDeviceViewToggle() {
 function parseQueryParams() {
   const urlParams = new URLSearchParams(window.location.search);
   checkinState.eventId = urlParams.get('event_id') || urlParams.get('event');
-  checkinState.qrToken = urlParams.get('token');
   checkinState.hostCode = urlParams.get('host') || null;
   const epochParam = urlParams.get('w');
   checkinState.windowEpoch = epochParam ? parseInt(epochParam, 10) : null;
@@ -95,10 +122,11 @@ function parseQueryParams() {
 }
 
 /**
- * Show error if no active event is present in system
+ * Replace the loading state with an error card (the card offers a camera scan button)
  */
-function showNoActiveEventState() {
+function showErrorState(title, message) {
   const loadingOverlay = document.getElementById('loadingState');
+  const formContainer = document.getElementById('checkinFormContainer');
   const errorCard = document.getElementById('errorBannerCard');
   const errorTitle = document.getElementById('errorBannerTitle');
   const errorMsg = document.getElementById('errorBannerMessage');
@@ -107,12 +135,39 @@ function showNoActiveEventState() {
     loadingOverlay.classList.add('is-hidden');
     loadingOverlay.style.display = 'none';
   }
+  if (formContainer) {
+    formContainer.classList.add('is-hidden');
+    formContainer.style.display = 'none';
+  }
   if (errorCard) {
     errorCard.classList.remove('is-hidden');
     errorCard.style.display = 'block';
-    if (errorTitle) errorTitle.textContent = 'No Active Event';
-    if (errorMsg) errorMsg.textContent = 'There is currently no active event scheduled. Please create or activate an event in the Admin Portal.';
+    if (errorTitle) errorTitle.textContent = title;
+    if (errorMsg) errorMsg.textContent = message;
   }
+}
+
+/**
+ * Check In / Check Out switch, shown only for events with check-out enabled
+ */
+function setupActionToggle() {
+  const btnIn = document.getElementById('actionBtnCheckIn');
+  const btnOut = document.getElementById('actionBtnCheckOut');
+  const submitBtnText = document.getElementById('submitBtnText');
+
+  const select = (action) => {
+    checkinState.action = action;
+    btnIn?.classList.toggle('active', action === 'CHECK_IN');
+    btnOut?.classList.toggle('active', action === 'CHECK_OUT');
+    if (submitBtnText) submitBtnText.textContent = submitLabel();
+  };
+
+  if (btnIn) btnIn.onclick = () => select('CHECK_IN');
+  if (btnOut) btnOut.onclick = () => select('CHECK_OUT');
+}
+
+function submitLabel() {
+  return checkinState.action === 'CHECK_OUT' ? 'Confirm & Check Out' : 'Confirm & Mark Attendance';
 }
 
 /**
@@ -124,32 +179,27 @@ async function loadEventAndBootstrap() {
   const errorCard = document.getElementById('errorBannerCard');
 
   try {
-    const event = await dbService.getEventById(checkinState.eventId, checkinState.qrToken);
+    const event = await dbService.getEventById(checkinState.eventId);
     if (!event) {
-      throw new Error('Event not found or has been removed. Please scan a valid event QR code.');
+      throw new Error('Event not found or no longer active. Please scan the live QR code on a staff member\'s phone.');
     }
 
     checkinState.event = event;
     renderEventHeader(event);
 
-    // Check if arriving via an Authorized Staff Host Beacon
-    if (checkinState.hostCode) {
-      try {
-        const host = await dbService.getAuthorizedHostByCode(checkinState.eventId, checkinState.hostCode);
-        if (host) {
-          checkinState.hostInfo = host;
-          const beaconBanner = document.getElementById('scannedBeaconBanner');
-          const beaconDetails = document.getElementById('scannedBeaconHostDetails');
-          if (beaconBanner) {
-            beaconBanner.classList.remove('is-hidden');
-            if (beaconDetails) {
-              const hostName = host.full_name || host.member_name || 'Staff Beacon';
-              beaconDetails.innerHTML = `<strong>${escapeHtml(hostName)}</strong> (${escapeHtml(host.member_code)}) &bull; ${escapeHtml(host.station_name || 'Staff Beacon')}`;
-            }
-          }
-        }
-      } catch (hostErr) {
-        console.warn('Could not load host beacon info:', hostErr);
+    if (event.checkout_enabled) {
+      document.getElementById('actionToggleGroup')?.classList.remove('is-hidden');
+    }
+
+    // Verified host from the scan ticket
+    const host = checkinState.hostInfo;
+    const beaconBanner = document.getElementById('scannedBeaconBanner');
+    const beaconDetails = document.getElementById('scannedBeaconHostDetails');
+    if (host && beaconBanner) {
+      beaconBanner.classList.remove('is-hidden');
+      if (beaconDetails) {
+        const validUntil = new Date(checkinState.scanTicket.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        beaconDetails.innerHTML = `<strong>${escapeHtml(host.full_name || 'Attendance taker')}</strong> (${escapeHtml(host.member_code)}) &bull; ${escapeHtml(host.station_name || 'Station')} &bull; Submit before ${escapeHtml(validUntil)}`;
       }
     }
 
@@ -187,6 +237,15 @@ async function loadEventAndBootstrap() {
 }
 
 /**
+ * "2026-10-26" -> "Mon, 26 Oct 2026" (parsed as a local date, not UTC midnight)
+ */
+function formatEventDate(isoDate) {
+  const [y, m, d] = String(isoDate || '').split('-').map(Number);
+  if (!y || !m || !d) return isoDate || '';
+  return new Date(y, m - 1, d).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/**
  * Render Header with Event Confirmation details
  */
 function renderEventHeader(event) {
@@ -196,7 +255,7 @@ function renderEventHeader(event) {
   const timeEl = document.getElementById('eventTimeDisplay');
   if (titleEl) titleEl.textContent = event.name;
   if (venueEl) venueEl.textContent = event.venue;
-  if (dateEl) dateEl.textContent = event.date;
+  if (dateEl) dateEl.textContent = formatEventDate(event.date);
   if (timeEl) timeEl.textContent = `${event.start_time.slice(0, 5)} - ${event.end_time.slice(0, 5)}`;
 
   // Pre-select role if event is single-role
@@ -217,7 +276,7 @@ function renderEventHeader(event) {
 function setupRoleToggle() {
   const btnStaff = document.getElementById('roleBtnStaff');
   const btnAgent = document.getElementById('roleBtnAgent');
-  const codeLabel = document.getElementById('codeLabel');
+  const personLabel = document.getElementById('personLabel');
 
   if (btnStaff) {
     btnStaff.onclick = () => selectRole('Staff');
@@ -228,17 +287,14 @@ function setupRoleToggle() {
 
   function selectRole(role) {
     checkinState.selectedRole = role;
-    if (role === 'Staff') {
-      btnStaff?.classList.add('active');
-      btnAgent?.classList.remove('active');
-      if (codeLabel) codeLabel.innerHTML = 'Select Employee Code <span class="required">*</span>';
-    } else {
-      btnAgent?.classList.add('active');
-      btnStaff?.classList.remove('active');
-      if (codeLabel) codeLabel.innerHTML = 'Select Agent Code <span class="required">*</span>';
+    btnStaff?.classList.toggle('active', role === 'Staff');
+    btnAgent?.classList.toggle('active', role === 'Agent');
+    if (personLabel) {
+      const codeName = role === 'Staff' ? 'Employee Code' : 'Agent Code';
+      personLabel.innerHTML = `Your Name or ${codeName} <span class="required">*</span>`;
     }
 
-    // Refresh member dropdowns if branch is selected
+    // Reload the person list for this role if a branch is selected
     const branchSelect = document.getElementById('selectBranch');
     if (branchSelect && branchSelect.value) {
       loadBranchMembers(branchSelect.value);
@@ -296,187 +352,227 @@ function populateDivisions(divisions) {
 }
 
 /**
- * Load Active Members as per Selected Branch and Role
+ * Load active members for the selected branch and role into the person search
  */
 async function loadBranchMembers(branchId) {
-  const nameSelect = document.getElementById('selectMemberName');
-  const codeSelect = document.getElementById('selectMemberCode');
-  const phoneInput = document.getElementById('inputPhoneNumber');
-  const searchWrapper = document.getElementById('memberSearchWrapper');
-  const searchInput = document.getElementById('inputMemberSearch');
-  const matchCount = document.getElementById('memberSearchMatchCount');
+  const input = document.getElementById('inputPersonSearch');
+  const helper = document.getElementById('personHelper');
+  if (!input) return;
 
-  if (!nameSelect || !codeSelect) return;
+  clearPersonSelection();
+  checkinState.branchMembers = [];
 
   if (!branchId) {
-    checkinState.branchMembers = [];
-    nameSelect.innerHTML = '<option value="">-- Select Branch First --</option>';
-    nameSelect.disabled = true;
-    codeSelect.innerHTML = '<option value="">-- Select Branch First --</option>';
-    codeSelect.disabled = true;
-    if (phoneInput) phoneInput.value = '';
-    if (searchWrapper) searchWrapper.classList.add('is-hidden');
+    input.disabled = true;
+    input.placeholder = 'Select your branch first';
+    if (helper) helper.textContent = 'Pick your branch, then type part of your name or code.';
     return;
   }
 
-  nameSelect.disabled = true;
-  codeSelect.disabled = true;
-  nameSelect.innerHTML = '<option value="">Loading names...</option>';
-  codeSelect.innerHTML = '<option value="">Loading codes...</option>';
+  input.disabled = true;
+  input.placeholder = 'Loading names...';
 
   try {
     const role = checkinState.selectedRole;
-    const members = await dbService.getMembers({
-      branchId,
-      role,
-      isActive: true
-    });
+    // Only id, name and code are returned; the attendee must type their own mobile number
+    const members = await dbService.getBranchMembersForCheckin(branchId, role);
+    checkinState.branchMembers = (members || []).slice().sort((a, b) => a.full_name.localeCompare(b.full_name));
 
-    checkinState.branchMembers = members || [];
-    if (phoneInput) phoneInput.value = '';
-
-    if (!members || members.length === 0) {
+    if (checkinState.branchMembers.length === 0) {
       const roleLabel = role === 'Staff' ? 'staff members' : 'agents';
-      nameSelect.innerHTML = `<option value="">No active ${roleLabel} in this branch</option>`;
-      codeSelect.innerHTML = `<option value="">No codes available</option>`;
-      nameSelect.disabled = true;
-      codeSelect.disabled = true;
-      if (searchWrapper) searchWrapper.classList.add('is-hidden');
+      input.placeholder = `No active ${roleLabel} in this branch`;
+      if (helper) helper.textContent = 'Check that you picked the right division, branch and role.';
       return;
     }
 
-    // Show search filter input
-    if (searchWrapper) searchWrapper.classList.remove('is-hidden');
-    if (searchInput) searchInput.value = '';
-    if (matchCount) matchCount.textContent = `${members.length} Members`;
-
-    // Sort names alphabetically
-    const nameSorted = [...members].sort((a, b) => a.full_name.localeCompare(b.full_name));
-    nameSelect.innerHTML = '<option value="">-- Select Your Name --</option>' +
-      nameSorted.map((m) => `<option value="${m.id}">${escapeHtml(m.full_name)} (${escapeHtml(m.member_code)})</option>`).join('');
-
-    // Sort codes alphabetically
-    const codeSorted = [...members].sort((a, b) => a.member_code.localeCompare(b.member_code));
-    const roleCodeTitle = role === 'Staff' ? 'Employee Code' : 'Agent Code';
-    codeSelect.innerHTML = `<option value="">-- Select ${roleCodeTitle} --</option>` +
-      codeSorted.map((m) => `<option value="${m.id}">${escapeHtml(m.member_code)} - ${escapeHtml(m.full_name)}</option>`).join('');
-
-    nameSelect.disabled = false;
-    codeSelect.disabled = false;
+    input.disabled = false;
+    input.placeholder = 'Type your name or code';
+    if (helper) helper.textContent = `${checkinState.branchMembers.length} people in this branch. Type part of your name or code, then pick yourself.`;
   } catch (err) {
     console.error('Failed to load branch members:', err);
-    nameSelect.innerHTML = '<option value="">Failed to load members</option>';
-    codeSelect.innerHTML = '<option value="">Failed to load codes</option>';
+    input.placeholder = 'Could not load names';
+    if (helper) helper.textContent = 'Check your connection and select the branch again.';
   }
 }
 
-/**
- * Setup Two-Way Synchronization Between Name and Code Dropdowns & Auto-fill Phone Number
- */
-function setupMemberSelectSync() {
-  const nameSelect = document.getElementById('selectMemberName');
-  const codeSelect = document.getElementById('selectMemberCode');
-  const phoneInput = document.getElementById('inputPhoneNumber');
-  const searchInput = document.getElementById('inputMemberSearch');
-  const matchCount = document.getElementById('memberSearchMatchCount');
+// Show at most this many matches; small branches list everyone on focus
+const PERSON_RESULT_LIMIT = 8;
+const PERSON_SHOW_ALL_UP_TO = 12;
+let personActiveIndex = -1;
+let personMatches = [];
 
-  if (!nameSelect || !codeSelect) return;
+function findPeople(query) {
+  const all = checkinState.branchMembers || [];
+  const q = query.trim().toLowerCase();
+  if (!q) return all.length <= PERSON_SHOW_ALL_UP_TO ? all : [];
 
-  function syncSelection(memberId) {
-    if (!memberId) {
-      nameSelect.value = '';
-      codeSelect.value = '';
-      if (phoneInput) phoneInput.value = '';
+  const scored = [];
+  for (const m of all) {
+    const name = m.full_name.toLowerCase();
+    const code = String(m.member_code).toLowerCase();
+    let score = -1;
+    if (code === q) score = 0;
+    else if (code.startsWith(q) || name.startsWith(q)) score = 1;
+    else if (name.split(/\s+/).some((part) => part.startsWith(q))) score = 2;
+    else if (name.includes(q) || code.includes(q)) score = 3;
+    if (score >= 0) scored.push({ m, score });
+  }
+  scored.sort((a, b) => a.score - b.score || a.m.full_name.localeCompare(b.m.full_name));
+  return scored.slice(0, PERSON_RESULT_LIMIT).map((s) => s.m);
+}
+
+function renderPersonResults(query) {
+  const input = document.getElementById('inputPersonSearch');
+  const list = document.getElementById('personResults');
+  if (!input || !list) return;
+
+  personMatches = findPeople(query);
+  personActiveIndex = personMatches.length > 0 ? 0 : -1;
+
+  if (personMatches.length === 0) {
+    if (!query.trim()) {
+      closePersonResults();
       return;
     }
-
-    const member = checkinState.branchMembers.find((m) => m.id === memberId);
-    if (member) {
-      nameSelect.value = member.id;
-      codeSelect.value = member.id;
-      if (phoneInput) {
-        phoneInput.value = member.phone_number || '';
-      }
-    }
+    list.innerHTML = '<li class="person-results-empty" role="option" aria-disabled="true">No match in this branch. Check the spelling, or your division and branch.</li>';
+  } else {
+    list.innerHTML = personMatches
+      .map((m, idx) => `
+        <li id="personOption-${idx}" role="option" data-index="${idx}" aria-selected="${idx === personActiveIndex}">
+          <span>${escapeHtml(m.full_name)}</span>
+          <span class="person-result-code">${escapeHtml(m.member_code)}</span>
+        </li>`)
+      .join('');
   }
 
-  nameSelect.addEventListener('change', () => {
-    syncSelection(nameSelect.value);
+  list.classList.remove('is-hidden');
+  input.setAttribute('aria-expanded', 'true');
+  updatePersonActiveOption();
+}
+
+function updatePersonActiveOption() {
+  const input = document.getElementById('inputPersonSearch');
+  const list = document.getElementById('personResults');
+  list.querySelectorAll('li[data-index]').forEach((li) => {
+    const isActive = Number(li.dataset.index) === personActiveIndex;
+    li.setAttribute('aria-selected', String(isActive));
+    if (isActive) li.scrollIntoView({ block: 'nearest' });
+  });
+  if (personActiveIndex >= 0) input.setAttribute('aria-activedescendant', `personOption-${personActiveIndex}`);
+  else input.removeAttribute('aria-activedescendant');
+}
+
+function closePersonResults() {
+  const input = document.getElementById('inputPersonSearch');
+  const list = document.getElementById('personResults');
+  list?.classList.add('is-hidden');
+  input?.setAttribute('aria-expanded', 'false');
+  input?.removeAttribute('aria-activedescendant');
+  personActiveIndex = -1;
+}
+
+function selectPerson(member) {
+  checkinState.selectedMemberId = member.id;
+  closePersonResults();
+  document.getElementById('personCombobox')?.classList.add('is-hidden');
+  document.getElementById('personSelected')?.classList.remove('is-hidden');
+  document.getElementById('personSelectedText').textContent = `${member.full_name} (${member.member_code})`;
+  document.getElementById('inputPhoneNumber')?.focus();
+}
+
+function clearPersonSelection() {
+  checkinState.selectedMemberId = null;
+  const input = document.getElementById('inputPersonSearch');
+  if (input) input.value = '';
+  closePersonResults();
+  document.getElementById('personCombobox')?.classList.remove('is-hidden');
+  document.getElementById('personSelected')?.classList.add('is-hidden');
+}
+
+/**
+ * One searchable field picks the attendee by name or code.
+ * The phone number is never filled in: it is the attendee's proof of identity.
+ */
+function setupPersonPicker() {
+  const input = document.getElementById('inputPersonSearch');
+  const list = document.getElementById('personResults');
+  const btnChange = document.getElementById('btnPersonChange');
+  if (!input || !list) return;
+
+  input.addEventListener('input', () => renderPersonResults(input.value));
+  input.addEventListener('focus', () => renderPersonResults(input.value));
+
+  input.addEventListener('keydown', (e) => {
+    const isOpen = !list.classList.contains('is-hidden');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!isOpen) renderPersonResults(input.value);
+      else if (personMatches.length > 0) personActiveIndex = (personActiveIndex + 1) % personMatches.length;
+      updatePersonActiveOption();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (personMatches.length > 0) personActiveIndex = (personActiveIndex - 1 + personMatches.length) % personMatches.length;
+      updatePersonActiveOption();
+    } else if (e.key === 'Enter') {
+      // Enter picks the highlighted person instead of submitting the form
+      if (isOpen && personActiveIndex >= 0) {
+        e.preventDefault();
+        selectPerson(personMatches[personActiveIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      closePersonResults();
+    }
   });
 
-  codeSelect.addEventListener('change', () => {
-    syncSelection(codeSelect.value);
+  // pointerdown fires before the input's blur, so the tap is not lost when the list closes
+  list.addEventListener('pointerdown', (e) => {
+    const li = e.target.closest('li[data-index]');
+    if (!li) return;
+    e.preventDefault();
+    selectPerson(personMatches[Number(li.dataset.index)]);
   });
 
-  // Fast live autocomplete filter for large rosters
-  if (searchInput) {
-    searchInput.addEventListener('input', () => {
-      const query = searchInput.value.trim().toLowerCase();
-      const allMembers = checkinState.branchMembers || [];
-      const filtered = query
-        ? allMembers.filter((m) =>
-            m.full_name.toLowerCase().includes(query) ||
-            m.member_code.toLowerCase().includes(query)
-          )
-        : allMembers;
+  input.addEventListener('blur', () => setTimeout(closePersonResults, 150));
 
-      if (matchCount) {
-        matchCount.textContent = query
-          ? `${filtered.length} of ${allMembers.length} matches`
-          : `${allMembers.length} Members`;
-      }
-
-      // Re-populate Name and Code dropdowns
-      const nameSorted = [...filtered].sort((a, b) => a.full_name.localeCompare(b.full_name));
-      nameSelect.innerHTML = '<option value="">-- Select Your Name --</option>' +
-        nameSorted.map((m) => `<option value="${m.id}">${escapeHtml(m.full_name)} (${escapeHtml(m.member_code)})</option>`).join('');
-
-      const codeSorted = [...filtered].sort((a, b) => a.member_code.localeCompare(b.member_code));
-      const roleCodeTitle = checkinState.selectedRole === 'Staff' ? 'Employee Code' : 'Agent Code';
-      codeSelect.innerHTML = `<option value="">-- Select ${roleCodeTitle} --</option>` +
-        codeSorted.map((m) => `<option value="${m.id}">${escapeHtml(m.member_code)} - ${escapeHtml(m.full_name)}</option>`).join('');
-
-      // Auto-select if exactly 1 match is found
-      if (filtered.length === 1 && query.length >= 2) {
-        syncSelection(filtered[0].id);
-      }
-    });
+  if (btnChange) {
+    btnChange.onclick = () => {
+      clearPersonSelection();
+      input.focus();
+    };
   }
 }
 
 /**
  * Geolocation Check Logic
  */
+/**
+ * Reads the best GPS fix over a few seconds and previews the server's geofence decision.
+ * @returns {Promise<{ok:boolean, message?:string}>}
+ */
 async function triggerGpsCheck(isManualClick = true) {
   const event = checkinState.event;
-  if (!event || !event.location_required) return true;
+  if (!event || !event.location_required) return { ok: true };
 
-  updateGpsIndicator('locating', 'Acquiring high-accuracy GPS coordinates...');
+  updateGpsIndicator('locating', 'Acquiring high-accuracy GPS coordinates (up to 8 seconds)...');
 
   try {
-    const position = await getCurrentPosition();
+    const position = await acquireBestPosition({ durationMs: 8000 });
     checkinState.currentPosition = position;
 
-    if (event.latitude && event.longitude) {
-      const distance = calculateDistanceMeters(
-        position.latitude,
-        position.longitude,
-        event.latitude,
-        event.longitude
-      );
+    const geo = evaluateGeofence(event, gpsFixForSubmit(position));
+    const accuracyText = `accuracy ±${Math.round(position.accuracy)}m`;
 
-      const isInside = distance <= event.radius_meters;
-
-      // Update / render Leaflet Geofence Radar Mini-Map
+    if (geo.distance !== null) {
       const mapWrapper = document.getElementById('checkinRadarMapWrapper');
       const radarPill = document.getElementById('radarStatusPill');
+      const isInside = geo.ok;
 
       if (mapWrapper) mapWrapper.classList.remove('is-hidden');
       if (radarPill) {
         radarPill.className = `map-status-pill ${isInside ? 'inside' : 'outside'}`;
         radarPill.textContent = isInside
-          ? `Inside Geofence (${Math.round(distance)}m)`
-          : `Outside Geofence (${Math.round(distance)}m > ${event.radius_meters}m)`;
+          ? `Inside Geofence (${Math.round(geo.distance)}m, ${accuracyText})`
+          : `Outside Geofence (${Math.round(geo.distance)}m > ${event.radius_meters}m)`;
       }
 
       if (!checkinState.radarMap) {
@@ -489,32 +585,41 @@ async function triggerGpsCheck(isManualClick = true) {
       } else {
         checkinState.radarMap.updateUserLocation(position);
       }
-
-      if (isInside) {
-        const spoofNote = position.isMockSuspicious ? ` • ⚠️ ${position.validationNote}` : '';
-        updateGpsIndicator(
-          'verified',
-          `GPS Verified: At venue (${formatDistance(distance)} from center, radius ${event.radius_meters}m)${spoofNote}`
-        );
-        return true;
-      } else {
-        updateGpsIndicator(
-          'warning',
-          `Outside venue radius (${formatDistance(distance)} away, max allowed is ${event.radius_meters}m)`
-        );
-        return false;
-      }
-    } else {
-      updateGpsIndicator('verified', 'GPS acquired (Coordinates locked)');
-      return true;
     }
+
+    if (!geo.ok) {
+      updateGpsIndicator(geo.code === 'OUTSIDE_GEOFENCE' ? 'warning' : 'error', geo.message);
+      if (isManualClick) alert(geo.message);
+      return { ok: false, message: geo.message };
+    }
+
+    const note = geo.flags.length > 0 ? ' • ⚠️ Will be flagged for admin review' : '';
+    updateGpsIndicator(
+      'verified',
+      `GPS Verified: At venue (${formatDistance(geo.distance)} from center, ${accuracyText}, radius ${event.radius_meters}m)${note}`
+    );
+    return { ok: true };
   } catch (err) {
     updateGpsIndicator('error', err.message);
     if (isManualClick) {
       alert(err.message);
     }
-    return false;
+    return { ok: false, message: err.message };
   }
+}
+
+/**
+ * GPS fields sent to the server (and used for the local preview)
+ */
+function gpsFixForSubmit(position) {
+  if (!position) return {};
+  return {
+    latitude: position.latitude,
+    longitude: position.longitude,
+    accuracy: position.accuracy,
+    positionAgeMs: position.timestamp ? Math.max(0, Date.now() - position.timestamp) : null,
+    gpsSuspicious: Boolean(position.isMockSuspicious)
+  };
 }
 
 /**
@@ -526,20 +631,18 @@ function setupScannerAction() {
 
   const openScanner = () => {
     openInAppScanner({
-      title: 'Scan Event QR or Staff Beacon',
+      title: 'Scan Staff QR Code',
       subtitle: 'Align the physical QR code or staff phone screen in the viewfinder',
       onScanSuccess: (decodedText) => {
+        // Only staff beacon QR codes (checkin.html links with host, window and signature) are accepted
         try {
-          if (decodedText.startsWith('http://') || decodedText.startsWith('https://') || decodedText.includes('/checkin.html')) {
-            window.location.href = decodedText;
-          } else if (decodedText.includes('token=') || decodedText.includes('event=')) {
-            window.location.href = `/checkin.html?${decodedText.replace(/^\?/, '')}`;
-          } else {
-            window.location.href = `/checkin.html?token=${encodeURIComponent(decodedText)}`;
+          const url = new URL(decodedText, window.location.origin);
+          if (url.pathname.endsWith('/checkin.html') && url.searchParams.get('host') && url.searchParams.get('sig')) {
+            window.location.href = `/checkin.html${url.search}`;
+            return;
           }
-        } catch (e) {
-          window.location.reload();
-        }
+        } catch (e) {}
+        showErrorState('Not a Staff QR Code', 'This is not an attendance QR code. Scan the live QR code shown on an authorized staff member\'s phone.');
       }
     });
   };
@@ -588,8 +691,7 @@ function setupFormListeners() {
       e.preventDefault();
       if (checkinState.isSubmitting) return;
 
-      const nameSelect = document.getElementById('selectMemberName');
-      const codeSelect = document.getElementById('selectMemberCode');
+      const personInput = document.getElementById('inputPersonSearch');
       const phoneInput = document.getElementById('inputPhoneNumber');
       const divSelect = document.getElementById('selectDivision');
       const branchSelect = document.getElementById('selectBranch');
@@ -599,7 +701,7 @@ function setupFormListeners() {
 
       const divisionId = divSelect ? divSelect.value : '';
       const branchId = branchSelect ? branchSelect.value : '';
-      const memberId = nameSelect?.value || codeSelect?.value || '';
+      const memberId = checkinState.selectedMemberId || '';
       const phoneNumber = phoneInput ? phoneInput.value.trim() : '';
 
       // Basic client-side checks
@@ -616,8 +718,8 @@ function setupFormListeners() {
       }
 
       if (!memberId) {
-        alert('Please select your Name or Code from the list.');
-        nameSelect?.focus();
+        alert('Type part of your name or code, then pick yourself from the list.');
+        personInput?.focus();
         return;
       }
 
@@ -634,38 +736,58 @@ function setupFormListeners() {
         return;
       }
 
-      // If location is required, ensure coordinates exist
-      if (checkinState.event.location_required && !checkinState.currentPosition) {
-        const gpsSuccess = await triggerGpsCheck(true);
-        if (!gpsSuccess) {
-          const proceed = confirm(
-            'We could not verify that you are within the venue radius. Would you like to proceed with submission for server verification?'
-          );
-          if (!proceed) return;
+      if (!checkinState.scanTicket || checkinState.scanTicket.expiresAt < Date.now()) {
+        showRejectionNotice('More than 10 minutes passed since you scanned. Scan the staff member\'s QR code again.');
+        return;
+      }
+
+      // Start submission; the flag and disabled button stop double taps while GPS and the request run
+      checkinState.isSubmitting = true;
+      submitBtn.disabled = true;
+      submitBtnSpinner.style.display = 'inline-block';
+
+      const resetSubmitButton = () => {
+        checkinState.isSubmitting = false;
+        submitBtn.disabled = false;
+        submitBtnText.textContent = submitLabel();
+        submitBtnSpinner.style.display = 'none';
+      };
+
+      // Use a fresh GPS fix: the one from page load may be minutes old
+      if (checkinState.event.location_required) {
+        const position = checkinState.currentPosition;
+        const isStale = !position || !position.timestamp || Date.now() - position.timestamp > GPS_REFRESH_AFTER_MS;
+        if (isStale) {
+          submitBtnText.textContent = 'Checking Your Location...';
+          const gps = await triggerGpsCheck(false);
+          if (!gps.ok) {
+            showRejectionNotice(gps.message || 'We could not verify your location. Tap "Retry GPS" and try again.');
+            resetSubmitButton();
+            return;
+          }
+        } else {
+          const geo = evaluateGeofence(checkinState.event, gpsFixForSubmit(position));
+          if (!geo.ok) {
+            showRejectionNotice(geo.message);
+            resetSubmitButton();
+            return;
+          }
         }
       }
 
-      // Start submission
-      checkinState.isSubmitting = true;
-      submitBtn.disabled = true;
-      submitBtnText.textContent = 'Verifying Attendance...';
-      submitBtnSpinner.style.display = 'inline-block';
+      submitBtnText.textContent = checkinState.action === 'CHECK_OUT' ? 'Recording Check-Out...' : 'Verifying Attendance...';
 
-      const isHostScan = Boolean(checkinState.hostCode);
       const payload = {
         eventId: checkinState.eventId,
-        qrToken: checkinState.qrToken,
-        checkInMode: isHostScan ? 'ATTENDEE_SCAN' : 'VENUE_STATIC_QR',
-        hostCode: checkinState.hostCode,
-        windowEpoch: checkinState.windowEpoch,
-        tokenSignature: checkinState.tokenSignature,
+        checkInMode: 'ATTENDEE_SCAN',
+        scanTicket: checkinState.scanTicket.id,
+        action: checkinState.action,
         role: checkinState.selectedRole,
         memberCode: selectedMember.member_code,
         phoneNumber: phoneNumber,
         divisionId: divisionId,
         branchId: branchId,
-        latitude: checkinState.currentPosition ? checkinState.currentPosition.latitude : null,
-        longitude: checkinState.currentPosition ? checkinState.currentPosition.longitude : null,
+        ...gpsFixForSubmit(checkinState.currentPosition),
         userAgent: navigator.userAgent
       };
 
@@ -683,10 +805,7 @@ function setupFormListeners() {
       // Require live internet connection - strictly online attendance only
       if (!navigator.onLine) {
         showRejectionNotice('Live internet connection required to record attendance. Please connect to mobile data or Wi-Fi and retry.');
-        checkinState.isSubmitting = false;
-        submitBtn.disabled = false;
-        submitBtnText.textContent = 'Confirm & Mark Attendance';
-        submitBtnSpinner.style.display = 'none';
+        resetSubmitButton();
         return;
       }
 
@@ -694,7 +813,11 @@ function setupFormListeners() {
         const result = await dbService.submitAttendance(payload);
 
         if (result.success) {
-          showAttendancePass(result.data);
+          // The scan ticket is now used; a later visit needs a new scan
+          try {
+            sessionStorage.removeItem(`attendpro_scan_ticket:${checkinState.eventId}`);
+          } catch (e) {}
+          showAttendancePass(result.data, { alreadyRecorded: Boolean(result.already_recorded) });
         } else {
           showRejectionNotice(result.message || 'Validation failed. Please verify your details and retry.');
         }
@@ -702,10 +825,7 @@ function setupFormListeners() {
         console.error('Online attendance submission failed:', err);
         showRejectionNotice(err.message || 'Attendance recording failed. A stable live internet connection is required.');
       } finally {
-        checkinState.isSubmitting = false;
-        submitBtn.disabled = false;
-        submitBtnText.textContent = 'Confirm & Mark Attendance';
-        submitBtnSpinner.style.display = 'none';
+        resetSubmitButton();
       }
     };
   }
@@ -714,9 +834,29 @@ function setupFormListeners() {
 /**
  * Display Celebratory Success Ticket / Digital Pass
  */
-function showAttendancePass(data) {
+function showAttendancePass(data, { alreadyRecorded = false } = {}) {
   const formCard = document.getElementById('checkinFormContainer');
   const passContainer = document.getElementById('passTicketContainer');
+  const isCheckOut = data.action === 'CHECK_OUT';
+
+  const titleEl = document.getElementById('passVerifiedTitle');
+  const subtitleEl = document.getElementById('passVerifiedSubtitle');
+  if (titleEl) titleEl.textContent = isCheckOut ? 'Check-Out Recorded!' : 'Attendance Verified!';
+  if (subtitleEl) {
+    subtitleEl.textContent = alreadyRecorded
+      ? 'Already recorded a moment ago. This is your existing receipt.'
+      : 'Official Digital Receipt Recorded';
+  }
+
+  // Late arrival / flagged-for-review note
+  const notes = [];
+  if (data.is_late && !isCheckOut) notes.push('⏰ Marked late');
+  if (data.verification_status === 'FLAGGED') notes.push('🔎 Location will be reviewed by the admin');
+  const noteEl = document.getElementById('passStatusNote');
+  if (noteEl) {
+    noteEl.textContent = notes.join(' • ');
+    noteEl.classList.toggle('is-hidden', notes.length === 0);
+  }
 
   if (formCard) {
     formCard.classList.add('is-hidden');
@@ -734,7 +874,9 @@ function showAttendancePass(data) {
   document.getElementById('passBranch').textContent = data.branch || data.branch_name || '';
   document.getElementById('passEventName').textContent = data.event_name;
   document.getElementById('passVenue').textContent = data.venue;
-  document.getElementById('passTimestamp').textContent = data.check_in_time;
+  document.getElementById('passTimestamp').textContent = isCheckOut
+    ? `In: ${data.check_in_time} • Out: ${data.check_out_time}`
+    : data.check_in_time;
   document.getElementById('passTicketRef').textContent = `PASS-${data.ticket_id.slice(0, 8).toUpperCase()}`;
 
   const distEl = document.getElementById('passGpsDistance');
@@ -750,13 +892,13 @@ function showAttendancePass(data) {
   if (passHostField && passVerifiedBy) {
     if (data.check_in_mode === 'HOST_SELF') {
       passHostField.style.display = 'block';
-      passVerifiedBy.innerHTML = '⭐ <strong>Host Self-Verification</strong> (Authorized Staff Beacon)';
+      passVerifiedBy.innerHTML = '⭐ <strong>Attendance taker</strong> (self check-in)';
     } else if (data.host_name || data.host_member_code) {
       passHostField.style.display = 'block';
-      passVerifiedBy.innerHTML = `📲 <strong>${escapeHtml(data.host_name || 'Staff Host')}</strong> (${escapeHtml(data.host_member_code || '')}) &bull; ${escapeHtml(data.host_station || 'Station')}`;
+      passVerifiedBy.innerHTML = `📲 <strong>${escapeHtml(data.host_name || 'Attendance taker')}</strong> (${escapeHtml(data.host_member_code || '')}) &bull; ${escapeHtml(data.host_station || 'Station')}`;
     } else {
       passHostField.style.display = 'block';
-      passVerifiedBy.textContent = 'Official Venue Static QR';
+      passVerifiedBy.textContent = data.check_in_mode === 'ADMIN_MANUAL' ? 'Manual entry by administrator' : 'Verified';
     }
   }
 
@@ -792,14 +934,6 @@ function showAttendancePass(data) {
   if (btnShare) {
     btnShare.onclick = () => {
       sharePassTicket(data);
-    };
-  }
-
-  // Print pass ticket button
-  const btnPrint = document.getElementById('btnPrintPassTicket');
-  if (btnPrint) {
-    btnPrint.onclick = () => {
-      window.print();
     };
   }
 }
@@ -871,7 +1005,7 @@ function downloadPassImage(data) {
   ctx.textAlign = 'center';
   ctx.fillStyle = '#64748b';
   ctx.font = '12px system-ui, -apple-system, sans-serif';
-  ctx.fillText('Secured by Dynamic Geofence & Cryptographic Attendance Pass', 320, 815);
+  ctx.fillText('Quick Access AttendPro', 320, 815);
 
   // Trigger download
   const link = document.createElement('a');

@@ -4,7 +4,7 @@
  * and seamless fallback for demo/offline test modes.
  */
 
-import { getSupabaseClient, getSupabaseConfig } from './supabase-config.js';
+import { getSupabaseClient } from './supabase-config.js';
 
 let authCallbacks = {
   onLoginSuccess: null,
@@ -19,6 +19,11 @@ export async function initAdminAuth({ onLoginSuccess, onLogout }) {
 
   setupAuthEventListeners();
 
+  // Live mode: admin accounts are granted in the database, so hide self-registration
+  if (getSupabaseClient()) {
+    document.getElementById('btnGoToRegister')?.closest('.auth-extra-links')?.classList.add('is-hidden');
+  }
+
   // Check if an existing active session exists
   const activeUser = await getAdminSession();
   if (activeUser) {
@@ -28,17 +33,31 @@ export async function initAdminAuth({ onLoginSuccess, onLogout }) {
   }
 }
 
+/**
+ * Returns true if the signed-in Supabase user is listed in the admins table
+ */
+async function isSupabaseAdmin(supabase) {
+  const { data, error } = await supabase.rpc('is_admin');
+  if (error) {
+    console.warn('is_admin check failed:', error);
+    return false;
+  }
+  return data === true;
+}
+
 export async function getAdminSession() {
   const supabase = getSupabaseClient();
   if (supabase) {
+    // Live mode never honours the local demo session
     try {
       const { data, error } = await supabase.auth.getSession();
-      if (!error && data?.session?.user) {
+      if (!error && data?.session?.user && await isSupabaseAdmin(supabase)) {
         return data.session.user;
       }
     } catch (e) {
       console.warn('Error checking Supabase session:', e);
     }
+    return null;
   }
 
   // Demo fallback session
@@ -69,6 +88,13 @@ export async function signInAdmin(email, password) {
       }
       return { success: false, error: msg };
     }
+    if (!(await isSupabaseAdmin(supabase))) {
+      await supabase.auth.signOut();
+      return {
+        success: false,
+        error: 'This account does not have admin access. Ask an existing administrator to add it to the admins table.'
+      };
+    }
     return { success: true, user: data.user };
   }
 
@@ -85,7 +111,7 @@ export async function signInAdmin(email, password) {
 
   return {
     success: false,
-    error: 'Invalid credentials. In Test/Demo Mode, use admin@attendpro.com with password: ' + savedPwd
+    error: 'Invalid email or password.'
   };
 }
 
@@ -94,17 +120,9 @@ export async function registerAdmin(email, password) {
   const cleanEmail = email.trim().toLowerCase();
 
   if (supabase) {
-    const { data, error } = await supabase.auth.signUp({
-      email: cleanEmail,
-      password: password
-    });
-    if (error) {
-      return { success: false, error: error.message };
-    }
     return {
-      success: true,
-      user: data.user,
-      hasSession: Boolean(data.session)
+      success: false,
+      error: 'Self-registration is disabled. Ask an existing administrator to create your account.'
     };
   }
 
@@ -162,6 +180,15 @@ export async function verifyOtpAndResetPassword(email, otp, newPassword) {
 
     if (updateError) {
       return { success: false, error: updateError.message || 'Failed to update password' };
+    }
+
+    // A password reset proves account ownership, not admin rights
+    if (!(await isSupabaseAdmin(supabase))) {
+      await supabase.auth.signOut();
+      return {
+        success: false,
+        error: 'Password updated, but this account does not have admin access. Ask an existing administrator to add it to the admins table.'
+      };
     }
 
     return { success: true, user: updateData.user || verifyData.user };

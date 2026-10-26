@@ -3,14 +3,13 @@
  * Full management dashboard for Events, QR Codes, Live Attendance, Master Records, and Supabase Settings.
  */
 
+import QRCode from 'qrcode';
 import { dbService } from './db-service.js';
 import { getCurrentPosition } from './haversine.js';
-import { buildEventCheckInUrl, downloadQrCode, printEventQrSignage, renderQrToCanvas } from './qr-helper.js';
 import { getSupabaseConfig, saveSupabaseConfig, setRunMode, testSupabaseConnection } from './supabase-config.js';
 import { initVisualAnalytics, updateVisualAnalytics, populateAnalyticsEventFilter } from './admin-analytics.js';
 import { soundController } from './audio-chime.js';
 import { initAdminGeofencePicker } from './geo-map.js';
-import { openInAppScanner } from './camera-scanner.js';
 import { initAdminAuth } from './admin-auth.js';
 
 // Application State
@@ -22,9 +21,12 @@ const state = {
   divisions: [],
   branches: [],
   auditLogs: [],
-  selectedEventForQr: null,
   selectedEventForHosts: null,
   geofencePicker: null,
+  attendanceView: 'present', // 'present' | 'pending'
+  liveStatus: 'offline', // 'live' | 'offline' (polling)
+  lastSyncAt: null, // ISO time of the newest change seen, for incremental polling
+  pendingManualMark: null, // { eventId, memberId } while the manual-mark modal is open
   activeFilters: {
     eventId: '',
     checkInMode: 'All',
@@ -98,7 +100,7 @@ export async function initAdminPortal() {
       setupLiveStreamControls();
     },
     onLogout: () => {
-      // Cleared session
+      stopRealtimeFeed();
     }
   });
 }
@@ -161,12 +163,30 @@ function setupTabs() {
 // -----------------------------------------------------------------------------
 async function refreshAllData() {
   try {
-    state.divisions = await dbService.getDivisions();
-    state.branches = await dbService.getBranches();
-    state.events = await dbService.getEvents();
-    state.attendance = await dbService.getAttendanceRecords();
-    state.members = await dbService.getMembers();
-    state.auditLogs = await dbService.getAuditLogs(100);
+    // Load in parallel; one failing source must not blank the whole dashboard
+    const sources = [
+      ['divisions', () => dbService.getDivisions()],
+      ['branches', () => dbService.getBranches()],
+      ['events', () => dbService.getEvents()],
+      ['attendance', () => dbService.getAttendanceRecords()],
+      ['members', () => dbService.getMembers()],
+      ['auditLogs', () => dbService.getAuditLogs(100)]
+    ];
+    const results = await Promise.allSettled(sources.map(([, load]) => load()));
+    const failures = [];
+    results.forEach((result, idx) => {
+      const [key] = sources[idx];
+      if (result.status === 'fulfilled') {
+        state[key] = result.value || [];
+      } else {
+        console.error(`Failed to load ${key}:`, result.reason);
+        failures.push(result.reason?.message || key);
+      }
+    });
+    if (failures.length > 0) {
+      showToast(failures[0], 'error');
+    }
+    state.lastSyncAt = latestChangeTime(state.attendance);
 
     populateFilterDropdowns();
     populateMemberFilterDropdowns();
@@ -248,27 +268,27 @@ function renderEventsGrid() {
               <span>🎯</span>
               <span>Radius: <strong>${event.radius_meters}m</strong> ${event.location_required ? '(GPS Enforced)' : '(GPS Optional)'}</span>
             </div>
+            <div class="event-meta-row">
+              <span>⏰</span>
+              <span>Late after <strong>${event.late_grace_minutes ?? 15} min</strong> &bull; Check-out ${event.checkout_enabled ? '<strong>on</strong>' : 'off'}</span>
+            </div>
+            ${event.location_required && !hasVenueCoordinates(event) ? `
+            <div class="event-meta-row" style="color:var(--accent-rose);">
+              <span>⚠️</span>
+              <span>Venue GPS not set: check-ins will be rejected</span>
+            </div>` : ''}
           </div>
         </div>
 
         <div class="event-card-actions">
-          <button class="btn btn-primary btn-sm btn-view-qr" data-id="${event.id}" title="Display static venue QR code">
-            📱 Static QR
-          </button>
-          <button class="btn btn-secondary btn-sm btn-manage-hosts" data-id="${event.id}" title="Assign staff members who will take attendance using mobile dynamic QR beacons">
-            👥 Assign Staff (Take Attendance)
-          </button>
-          <button class="btn btn-secondary btn-sm btn-print-signage" data-id="${event.id}">
-            🖨️ Print
+          <button class="btn btn-primary btn-sm btn-manage-hosts" data-id="${event.id}" title="Assign staff members who will take attendance using mobile rotating QR beacons">
+            👥 Attendance Takers
           </button>
           <button class="btn btn-secondary btn-sm btn-edit-event" data-id="${event.id}" title="Edit event date, time, venue, permitted roles, and GPS geofence radius">
             ✏️ Edit
           </button>
           <button class="btn btn-ghost btn-sm btn-toggle-status" data-id="${event.id}">
             ${event.is_active ? '⏸️ Deactivate' : '▶️ Activate'}
-          </button>
-          <button class="btn btn-ghost btn-sm btn-delete-event" data-id="${event.id}" style="color:var(--accent-rose);margin-left:auto;">
-            🗑️
           </button>
         </div>
       </div>
@@ -277,19 +297,8 @@ function renderEventsGrid() {
     .join('');
 
   // Attach card event listeners
-  container.querySelectorAll('.btn-view-qr').forEach((btn) => {
-    btn.onclick = () => openQrModal(btn.dataset.id);
-  });
-
   container.querySelectorAll('.btn-manage-hosts').forEach((btn) => {
     btn.onclick = () => openHostsModal(btn.dataset.id);
-  });
-
-  container.querySelectorAll('.btn-print-signage').forEach((btn) => {
-    btn.onclick = () => {
-      const event = state.events.find((e) => e.id === btn.dataset.id);
-      if (event) printEventQrSignage(event);
-    };
   });
 
   container.querySelectorAll('.btn-edit-event').forEach((btn) => {
@@ -301,15 +310,18 @@ function renderEventsGrid() {
       const event = state.events.find((e) => e.id === btn.dataset.id);
       if (!event) return;
       const newStatus = !event.is_active;
-      await dbService.updateEventStatus(event.id, newStatus);
+      if (newStatus && event.location_required && !hasVenueCoordinates(event)) {
+        showToast('Set the venue GPS location (Edit event) before activating: every check-in would be rejected without it.', 'error');
+        return;
+      }
+      try {
+        await dbService.updateEventStatus(event.id, newStatus);
+      } catch (err) {
+        showToast(err.message, 'error');
+        return;
+      }
       showToast(`Event status updated to ${newStatus ? 'Active' : 'Inactive'}`, 'success');
       await refreshAllData();
-    };
-  });
-
-  container.querySelectorAll('.btn-delete-event').forEach((btn) => {
-    btn.onclick = () => {
-      openDeleteEventModal(btn.dataset.id);
     };
   });
 }
@@ -345,6 +357,8 @@ function openEditEventModal(eventId) {
   document.getElementById('editEventEndTime').value = (event.end_time || '20:00').slice(0, 5);
   document.getElementById('editEventRadius').value = event.radius_meters || 50;
   document.getElementById('editEventLocationRequired').checked = Boolean(event.location_required);
+  document.getElementById('editEventLateGrace').value = event.late_grace_minutes ?? 15;
+  document.getElementById('editEventCheckoutEnabled').checked = Boolean(event.checkout_enabled);
 
   const lat = event.latitude !== null && event.latitude !== undefined && event.latitude !== '' ? Number(event.latitude) : 28.6139;
   const lng = event.longitude !== null && event.longitude !== undefined && event.longitude !== '' ? Number(event.longitude) : 77.2090;
@@ -374,23 +388,43 @@ function openEditEventModal(eventId) {
   }, 150);
 }
 
-// Open QR Code Preview Modal
-async function openQrModal(eventId) {
-  const event = state.events.find((e) => e.id === eventId);
-  if (!event) return;
-  state.selectedEventForQr = event;
-
-  const modal = document.getElementById('qrModal');
-  const canvas = document.getElementById('qrCodeCanvas');
-  const titleEl = document.getElementById('qrModalEventTitle');
-  const linkInput = document.getElementById('qrDirectLink');
-
-  titleEl.textContent = event.name;
-  const checkInUrl = buildEventCheckInUrl(event.id, event.qr_token);
-  linkInput.value = checkInUrl;
-
-  await renderQrToCanvas(canvas, checkInUrl, { width: 280 });
+async function openHostLinkQr(link, name, station) {
+  const modal = document.getElementById('hostLinkQrModal');
+  document.getElementById('hostLinkQrName').textContent = name;
+  document.getElementById('hostLinkQrStation').textContent = station || '';
+  const linkInput = document.getElementById('hostLinkQrUrl');
+  linkInput.value = link;
+  try {
+    await QRCode.toCanvas(document.getElementById('hostLinkQrCanvas'), link, {
+      width: 260,
+      margin: 2,
+      errorCorrectionLevel: 'M'
+    });
+  } catch (err) {
+    showToast('Could not draw the QR code. Copy the link instead.', 'error');
+  }
+  document.getElementById('btnCopyHostLinkQrUrl').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      showToast('Private link copied.', 'info');
+    } catch (err) {
+      linkInput.select();
+    }
+  };
   modal.classList.add('active');
+}
+
+// Late grace is optional: an empty field means the 15-minute default, 0 means late right after start
+function readLateGrace(inputId) {
+  const raw = document.getElementById(inputId)?.value.trim();
+  if (!raw) return 15;
+  const minutes = Number(raw);
+  return Number.isFinite(minutes) && minutes >= 0 ? Math.round(minutes) : 15;
+}
+
+function hasVenueCoordinates(event) {
+  const isSet = (v) => v !== null && v !== undefined && v !== '' && !Number.isNaN(Number(v));
+  return isSet(event.latitude) && isSet(event.longitude);
 }
 
 // -----------------------------------------------------------------------------
@@ -414,12 +448,22 @@ async function openHostsModal(eventId) {
   const btnDeselectAll = document.getElementById('btnDeselectAllHosts');
 
   if (subtitleEl) {
-    subtitleEl.textContent = `Event: ${event.name} (${event.venue}) • Assign Staff to Take Attendance via Mobile Beacons`;
+    subtitleEl.textContent = `Event: ${event.name} (${event.venue}) • Choose who takes attendance with a staff QR`;
   }
   if (searchInput) searchInput.value = '';
 
-  // Get currently authorized hosts for this event
-  const authorizedHosts = await dbService.getEventAuthorizedHosts(eventId);
+  // Get currently authorized hosts and their private beacon keys for this event
+  let authorizedHosts = [];
+  let hostKeys = new Map();
+  try {
+    [authorizedHosts, hostKeys] = await Promise.all([
+      dbService.getEventAuthorizedHosts(eventId),
+      dbService.getEventHostKeys(eventId)
+    ]);
+  } catch (err) {
+    showToast(err.message, 'error');
+    return;
+  }
   const authMap = new Map();
   authorizedHosts.forEach((h) => {
     authMap.set(h.member_id, h);
@@ -531,7 +575,20 @@ async function openHostsModal(eventId) {
         const stateObj = workingState.get(m.id) || {};
         const isChecked = stateObj.isChecked;
         const station = stateObj.station || 'Main Gate';
-        const hostLink = `${window.location.origin}/host.html?event=${event.id}&host=${m.member_code}`;
+        // The private beacon link carries the host's key; it exists only after the host is saved
+        const hostKey = hostKeys.get(m.id);
+        const hostLink = hostKey
+          ? `${window.location.origin}/host.html?${new URLSearchParams({ event: event.id, host: m.member_code, key: hostKey }).toString()}`
+          : null;
+        const linkActions = hostLink
+          ? `
+              <button type="button" class="btn btn-secondary btn-sm btn-show-host-qr" data-link="${escapeHtml(hostLink)}" data-name="${escapeHtml(m.full_name)}" data-station="${escapeHtml(station)}" title="Show the private link as a QR for this attendance taker to scan with their own phone">
+                📱 Show QR
+              </button>
+              <button type="button" class="btn btn-ghost btn-sm btn-copy-host-link" data-link="${escapeHtml(hostLink)}" title="Copy the private link to send to this attendance taker only">
+                📋 Copy Link
+              </button>`
+          : (isChecked ? '<span class="badge badge-neutral" title="Save to create this host\'s private beacon link" style="font-size:0.7rem;">Save to get link</span>' : '');
 
         return `
           <tr data-member-id="${m.id}" data-member-code="${m.member_code}" data-member-name="${escapeHtml(m.full_name)}">
@@ -550,15 +607,10 @@ async function openHostsModal(eventId) {
               <input type="text" class="host-station-input" value="${escapeHtml(station)}" placeholder="e.g. Gate 1 / Registration Desk" />
             </td>
             <td class="host-actions-cell" style="text-align: right;">
-              <a href="${hostLink}" target="_blank" class="btn btn-secondary btn-sm" title="Open Mobile Rotating QR Beacon for this Staff Member">
-                📱 Open Beacon
-              </a>
-              <button type="button" class="btn btn-ghost btn-sm btn-copy-host-link" data-link="${hostLink}" title="Copy Mobile Link to send to Staff via WhatsApp/SMS">
-                📋 Copy
-              </button>
+              ${isChecked ? linkActions : ''}
               ${isChecked ? (stateObj.deviceId ? `
                 <button type="button" class="btn btn-ghost btn-sm btn-reset-device-lock" data-member-id="${m.id}" data-member-name="${escapeHtml(m.full_name)}" title="Phone is currently locked to this beacon. Click to reset so staff can bind another phone.">
-                  🔓 Reset Device
+                  🔓 Reset Device Lock
                 </button>
               ` : `
                 <span class="badge badge-secondary" title="No phone bound yet" style="font-size:0.7rem; padding: 2px 6px;">⏳ Unbound</span>
@@ -576,10 +628,20 @@ async function openHostsModal(eventId) {
 
     // Attach copy button listeners
     tbody.querySelectorAll('.btn-copy-host-link').forEach((btn) => {
-      btn.onclick = () => {
-        navigator.clipboard.writeText(btn.dataset.link);
-        showToast('Host beacon link copied to clipboard!', 'info');
+      btn.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(btn.dataset.link);
+          showToast('Private link copied. Send it only to this attendance taker: anyone with it can show their QR.', 'info');
+        } catch (err) {
+          showToast('Could not copy automatically. Use "Show QR" and copy the link shown there.', 'warning');
+        }
       };
+    });
+
+    // Show the private link as a QR, so the attendance taker scans it with their own phone
+    // (opening the link on the admin's computer would lock the beacon to that computer)
+    tbody.querySelectorAll('.btn-show-host-qr').forEach((btn) => {
+      btn.onclick = () => openHostLinkQr(btn.dataset.link, btn.dataset.name, btn.dataset.station);
     });
 
     // Attach quick unassign button listeners
@@ -711,14 +773,14 @@ async function openHostsModal(eventId) {
         });
 
         await dbService.authorizeEventHosts(event.id, hostConfigs);
-        showToast(`Successfully saved ${hostConfigs.length} authorized host beacons!`, 'success');
+        showToast(`Saved ${hostConfigs.length} attendance taker${hostConfigs.length === 1 ? '' : 's'}.`, 'success');
         modal.classList.remove('active');
         await refreshAllData();
       } catch (err) {
         showToast('Failed to save authorized hosts: ' + err.message, 'error');
       } finally {
         btnSave.disabled = false;
-        btnSave.textContent = 'Save & Update Beacons';
+        btnSave.textContent = 'Save Attendance Takers';
       }
     };
   }
@@ -749,21 +811,37 @@ function populateFilterDropdowns() {
     branchSelect.innerHTML = '<option value="All">All Branches</option>' +
       state.branches.map((b) => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('');
   }
+
+  // Keep the admin's current selections after a data refresh
+  const keep = (select, value, fallback) => {
+    if (!select) return;
+    select.value = [...select.options].some((o) => o.value === value) ? value : fallback;
+  };
+  keep(eventSelect, state.activeFilters.eventId, '');
+  keep(divSelect, state.activeFilters.divisionId, 'All');
+  keep(branchSelect, state.activeFilters.branchId, 'All');
+  state.activeFilters.eventId = eventSelect ? eventSelect.value : state.activeFilters.eventId;
 }
 
-async function renderAttendanceTable() {
-  const tbody = document.getElementById('attendanceTableBody');
-  const countEl = document.getElementById('attendanceRecordCount');
-  if (!tbody) return;
+// Local calendar date (YYYY-MM-DD) of an ISO timestamp, so the date filter matches what admins see
+function localDateKey(iso) {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
-  const records = await dbService.getAttendanceRecords(state.activeFilters);
-
-  // Apply client-side text search (by Name or Member Code) and Check-In Mode
-  const searchTerm = state.activeFilters.search.trim().toLowerCase();
-  const filtered = records.filter((r) => {
-    if (state.activeFilters.checkInMode && state.activeFilters.checkInMode !== 'All') {
-      if (r.check_in_mode !== state.activeFilters.checkInMode) return false;
-    }
+/**
+ * Applies the attendance tab filters to the in-memory records (no network round trip)
+ */
+function getFilteredAttendance() {
+  const f = state.activeFilters;
+  const searchTerm = f.search.trim().toLowerCase();
+  return state.attendance.filter((r) => {
+    if (f.eventId && r.event_id !== f.eventId) return false;
+    if (f.checkInMode && f.checkInMode !== 'All' && r.check_in_mode !== f.checkInMode) return false;
+    if (f.role && f.role !== 'All' && r.role !== f.role) return false;
+    if (f.divisionId && f.divisionId !== 'All' && r.division_id !== f.divisionId) return false;
+    if (f.branchId && f.branchId !== 'All' && r.branch_id !== f.branchId) return false;
+    if (f.date && localDateKey(r.check_in_time) !== f.date) return false;
     if (!searchTerm) return true;
     return (
       (r.full_name && r.full_name.toLowerCase().includes(searchTerm)) ||
@@ -771,6 +849,85 @@ async function renderAttendanceTable() {
       (r.event_name && r.event_name.toLowerCase().includes(searchTerm))
     );
   });
+}
+
+function checkInModeBadge(record) {
+  if (record.check_in_mode === 'HOST_SELF') {
+    return '<span class="badge badge-mode-self" title="Attendance taker marked their own attendance">⭐ Attendance Taker (Self)</span>';
+  }
+  if (record.check_in_mode === 'ATTENDEE_SCAN') {
+    const hName = escapeHtml(record.host_name || record.host_member_code || 'Staff');
+    const hStation = record.host_station ? ` • ${escapeHtml(record.host_station)}` : '';
+    return `<span class="badge badge-mode-scan" title="Scanned via Host: ${hName}">📲 ${hName}${hStation}</span>`;
+  }
+  if (record.check_in_mode === 'ADMIN_MANUAL') {
+    return '<span class="badge badge-neutral" title="Marked present by an administrator">✍️ Manual</span>';
+  }
+  return '<span class="badge badge-mode-venue">Legacy Static QR</span>';
+}
+
+function verificationBadges(record) {
+  const notes = record.verification_notes ? ` title="${escapeHtml(record.verification_notes)}"` : '';
+  let badge = '<span class="badge badge-success">VERIFIED</span>';
+  if (record.verification_status === 'FLAGGED') {
+    badge = `<span class="badge badge-warning"${notes}>🔎 FLAGGED</span>`;
+  } else if (record.verification_status === 'MANUAL') {
+    badge = `<span class="badge badge-info"${notes}>MANUAL</span>`;
+  }
+  const late = record.is_late ? ' <span class="badge badge-danger">LATE</span>' : '';
+  return badge + late;
+}
+
+function attendanceRowHtml(record, highlight = false) {
+  const timeOpts = { hour: '2-digit', minute: '2-digit', second: '2-digit' };
+  const timeStr = new Date(record.check_in_time).toLocaleTimeString([], timeOpts);
+  const dateStr = new Date(record.check_in_time).toLocaleDateString();
+  const outStr = record.check_out_time
+    ? `<div style="font-size:0.75rem;color:var(--text-secondary);">Out ${new Date(record.check_out_time).toLocaleTimeString([], timeOpts)}</div>`
+    : '';
+  const roleBadge = record.role === 'Staff'
+    ? '<span class="badge badge-info">Staff</span>'
+    : '<span class="badge badge-warning">Agent</span>';
+
+  const accuracy = record.accuracy_meters !== null && record.accuracy_meters !== undefined
+    ? ` title="GPS accuracy ±${Math.round(record.accuracy_meters)}m"`
+    : '';
+  const distanceBadge = record.distance_meters !== null && record.distance_meters !== undefined
+    ? `<span class="badge badge-success"${accuracy}>📍 ${Math.round(record.distance_meters)}m</span>`
+    : '<span class="badge badge-neutral">GPS N/A</span>';
+
+  return `
+    <tr data-record-id="${escapeHtml(record.id)}"${highlight ? ' class="row-live-highlight"' : ''}>
+      <td>
+        <div style="font-weight:700;color:var(--text-primary);">${escapeHtml(record.full_name || 'Unknown')}</div>
+        <div style="font-size:0.75rem;font-family:monospace;color:var(--text-muted);">${escapeHtml(record.member_code)}</div>
+      </td>
+      <td>${roleBadge}</td>
+      <td>
+        <div style="font-weight:600;">${escapeHtml(record.division_name || 'N/A')}</div>
+        <div style="font-size:0.75rem;color:var(--text-muted);">${escapeHtml(record.branch_name || 'N/A')}</div>
+      </td>
+      <td>
+        <div style="font-weight:600;">${escapeHtml(record.event_name || 'Event')}</div>
+      </td>
+      <td>
+        <div>${timeStr}</div>
+        <div style="font-size:0.75rem;color:var(--text-muted);">${dateStr}</div>
+        ${outStr}
+      </td>
+      <td>${distanceBadge}</td>
+      <td>${checkInModeBadge(record)}</td>
+      <td>${verificationBadges(record)}</td>
+    </tr>
+  `;
+}
+
+function renderAttendanceTable({ highlightId = null } = {}) {
+  const tbody = document.getElementById('attendanceTableBody');
+  const countEl = document.getElementById('attendanceRecordCount');
+  if (!tbody) return;
+
+  const filtered = getFilteredAttendance();
 
   if (countEl) countEl.textContent = `${filtered.length} record${filtered.length === 1 ? '' : 's'}`;
 
@@ -780,68 +937,128 @@ async function renderAttendanceTable() {
         <td colspan="8" class="empty-state">
           <div class="empty-state-icon">📋</div>
           <div class="empty-state-title">No Attendance Records Found</div>
-          <p>Scan an event QR code to record attendance or adjust your filter criteria.</p>
+          <p>Attendees appear here when they scan a staff member's QR code. Adjust the filters if you expected records.</p>
+        </td>
+      </tr>
+    `;
+  } else {
+    tbody.innerHTML = filtered.map((record) => attendanceRowHtml(record, record.id === highlightId)).join('');
+  }
+
+  renderPendingTable();
+}
+
+/**
+ * Members eligible for the selected event (active, permitted role, matching filters) who have not checked in
+ */
+function getPendingMembers(event) {
+  const presentIds = new Set(state.attendance.filter((a) => a.event_id === event.id).map((a) => a.member_id));
+  const f = state.activeFilters;
+  const searchTerm = f.search.trim().toLowerCase();
+  return state.members.filter((m) => {
+    if (!m.is_active || presentIds.has(m.id)) return false;
+    if (event.permitted_roles !== 'All' && m.role !== event.permitted_roles) return false;
+    if (f.role && f.role !== 'All' && m.role !== f.role) return false;
+    if (f.divisionId && f.divisionId !== 'All' && m.division_id !== f.divisionId) return false;
+    if (f.branchId && f.branchId !== 'All' && m.branch_id !== f.branchId) return false;
+    if (!searchTerm) return true;
+    return m.full_name.toLowerCase().includes(searchTerm) || String(m.member_code).toLowerCase().includes(searchTerm);
+  });
+}
+
+function renderPendingTable() {
+  const tbody = document.getElementById('pendingTableBody');
+  const badge = document.getElementById('pendingCountBadge');
+  if (!tbody) return;
+
+  const event = state.events.find((e) => e.id === state.activeFilters.eventId);
+  if (!event) {
+    if (badge) badge.textContent = '–';
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="5" class="empty-state">
+          <div class="empty-state-icon">🎯</div>
+          <div class="empty-state-title">Select an event</div>
+          <p>Choose an event in the first filter to see who has not checked in yet.</p>
         </td>
       </tr>
     `;
     return;
   }
 
-  tbody.innerHTML = filtered
-    .map((record) => {
-      const timeStr = new Date(record.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      const dateStr = new Date(record.check_in_time).toLocaleDateString();
-      const roleBadge = record.role === 'Staff'
-        ? '<span class="badge badge-info">Staff</span>'
-        : '<span class="badge badge-warning">Agent</span>';
+  const pending = getPendingMembers(event);
+  if (badge) badge.textContent = pending.length;
 
-      const distanceBadge = record.distance_meters !== null && record.distance_meters !== undefined
-        ? `<span class="badge badge-success">📍 ${Math.round(record.distance_meters)}m</span>`
-        : '<span class="badge badge-neutral">GPS N/A</span>';
-
-      let modeBadge = '<span class="badge badge-mode-venue">Static QR</span>';
-      if (record.check_in_mode === 'HOST_SELF') {
-        modeBadge = '<span class="badge badge-mode-self" title="Authorized Host Self Check-In">⭐ Host Self</span>';
-      } else if (record.check_in_mode === 'ATTENDEE_SCAN') {
-        const hName = record.host_name ? escapeHtml(record.host_name) : (record.host_member_code || 'Staff');
-        const hStation = record.host_station ? ` • ${escapeHtml(record.host_station)}` : '';
-        modeBadge = `<span class="badge badge-mode-scan" title="Scanned via Host: ${hName}">📲 ${hName}${hStation}</span>`;
-      }
-
-      return `
-      <tr data-record-id="${record.id}">
-        <td>
-          <div style="font-weight:700;color:var(--text-primary);">${escapeHtml(record.full_name || 'Unknown')}</div>
-          <div style="font-size:0.75rem;font-family:monospace;color:var(--text-muted);">${record.member_code}</div>
-        </td>
-        <td>${roleBadge}</td>
-        <td>
-          <div style="font-weight:600;">${escapeHtml(record.division_name || 'N/A')}</div>
-          <div style="font-size:0.75rem;color:var(--text-muted);">${escapeHtml(record.branch_name || 'N/A')}</div>
-        </td>
-        <td>
-          <div style="font-weight:600;">${escapeHtml(record.event_name || 'Event')}</div>
-        </td>
-        <td>
-          <div>${timeStr}</div>
-          <div style="font-size:0.75rem;color:var(--text-muted);">${dateStr}</div>
-        </td>
-        <td>${distanceBadge}</td>
-        <td>${modeBadge}</td>
-        <td>
-          <span class="badge badge-success">VERIFIED</span>
+  if (pending.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="5" class="empty-state">
+          <div class="empty-state-icon">🎉</div>
+          <div class="empty-state-title">Everyone is checked in</div>
+          <p>No eligible members are pending for ${escapeHtml(event.name)} with the current filters.</p>
         </td>
       </tr>
     `;
-    })
+    return;
+  }
+
+  tbody.innerHTML = pending
+    .map((m) => `
+      <tr>
+        <td>
+          <div style="font-weight:700;color:var(--text-primary);">${escapeHtml(m.full_name)}</div>
+          <div style="font-size:0.75rem;font-family:monospace;color:var(--text-muted);">${escapeHtml(m.member_code)}</div>
+        </td>
+        <td>${m.role === 'Staff' ? '<span class="badge badge-info">Staff</span>' : '<span class="badge badge-warning">Agent</span>'}</td>
+        <td>
+          <div style="font-weight:600;">${escapeHtml(m.division_name || 'N/A')}</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);">${escapeHtml(m.branch_name || 'N/A')}</div>
+        </td>
+        <td style="font-family:monospace;">${escapeHtml(m.phone_number || '')}</td>
+        <td style="text-align:right;">
+          <button type="button" class="btn btn-secondary btn-sm btn-manual-mark" data-member-id="${escapeHtml(m.id)}" data-member-name="${escapeHtml(m.full_name)}">
+            ✍️ Mark Present
+          </button>
+        </td>
+      </tr>
+    `)
     .join('');
+
+  tbody.querySelectorAll('.btn-manual-mark').forEach((btn) => {
+    btn.onclick = () => openManualMarkModal(event, btn.dataset.memberId, btn.dataset.memberName);
+  });
+}
+
+function setAttendanceView(view) {
+  state.attendanceView = view;
+  document.getElementById('btnViewPresent')?.classList.toggle('active', view === 'present');
+  document.getElementById('btnViewPending')?.classList.toggle('active', view === 'pending');
+  document.getElementById('presentTableWrap')?.classList.toggle('is-hidden', view !== 'present');
+  document.getElementById('pendingTableWrap')?.classList.toggle('is-hidden', view !== 'pending');
+}
+
+function openManualMarkModal(event, memberId, memberName) {
+  state.pendingManualMark = { eventId: event.id, memberId };
+  document.getElementById('manualMarkMemberName').textContent = memberName;
+  document.getElementById('manualMarkEventName').textContent = event.name;
+  document.getElementById('manualMarkReason').value = '';
+  document.getElementById('manualMarkModal').classList.add('active');
+  setTimeout(() => document.getElementById('manualMarkReason')?.focus(), 50);
 }
 
 // -----------------------------------------------------------------------------
 // CSV / EXCEL REPORT EXPORT
 // -----------------------------------------------------------------------------
+// Quotes a CSV cell and neutralises spreadsheet formulas (=, +, -, @) in user-entered text
+function csvCell(value) {
+  if (value === null || value === undefined) return '';
+  let text = String(value);
+  if (/^[=+\-@]/.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
 async function exportAttendanceToCSV() {
-  const records = await dbService.getAttendanceRecords(state.activeFilters);
+  const records = getFilteredAttendance();
   if (records.length === 0) {
     showToast('No attendance records available to export.', 'warning');
     return;
@@ -856,34 +1073,42 @@ async function exportAttendanceToCSV() {
     'Branch',
     'Event Name',
     'Venue',
-    'Check-in Timestamp',
+    'Check-in Time',
+    'Check-out Time',
+    'Late',
     'Distance (Meters)',
+    'GPS Accuracy (Meters)',
     'Check-in Mode',
     'Host Name',
     'Host Code',
-    'Host Station',
-    'Status'
+    'Status',
+    'Notes'
   ];
 
+  const toLocal = (iso) => (iso ? new Date(iso).toLocaleString() : '');
   const rows = records.map((r) => [
-    `"${r.id}"`,
-    `"${r.full_name || ''}"`,
-    `"${r.member_code || ''}"`,
-    `"${r.role || ''}"`,
-    `"${r.division_name || ''}"`,
-    `"${r.branch_name || ''}"`,
-    `"${r.event_name || ''}"`,
-    `"${r.venue || ''}"`,
-    `"${r.check_in_time}"`,
-    r.distance_meters !== null ? r.distance_meters : '',
-    `"${r.check_in_mode || 'VENUE_STATIC_QR'}"`,
-    `"${r.host_name || ''}"`,
-    `"${r.host_member_code || ''}"`,
-    `"${r.host_station || ''}"`,
-    `"${r.verification_status || 'VERIFIED'}"`
-  ]);
+    r.id,
+    r.full_name,
+    r.member_code,
+    r.role,
+    r.division_name,
+    r.branch_name,
+    r.event_name,
+    r.venue,
+    toLocal(r.check_in_time),
+    toLocal(r.check_out_time),
+    r.is_late ? 'Yes' : 'No',
+    r.distance_meters !== null && r.distance_meters !== undefined ? Math.round(r.distance_meters) : '',
+    r.accuracy_meters !== null && r.accuracy_meters !== undefined ? Math.round(r.accuracy_meters) : '',
+    r.check_in_mode,
+    r.host_name,
+    r.host_member_code,
+    r.verification_status || 'VERIFIED',
+    r.verification_notes
+  ].map(csvCell));
 
-  const csvContent = [headers.join(','), ...rows.map((e) => e.join(','))].join('\r\n');
+  // Excel opens UTF-8 CSV correctly only with a byte-order mark
+  const csvContent = '﻿' + [headers.map(csvCell).join(','), ...rows.map((e) => e.join(','))].join('\r\n');
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -966,7 +1191,7 @@ async function renderMembersTable() {
   const countEl = document.getElementById('memberRecordCount');
   if (!tbody) return;
 
-  state.members = await dbService.getMembers();
+  // state.members is loaded by refreshAllData; filtering here stays in memory
 
   populateMemberSelectOptions();
 
@@ -1014,7 +1239,7 @@ async function renderMembersTable() {
   });
 
   if (countEl) {
-    countEl.textContent = `${filtered.length} user${filtered.length === 1 ? '' : 's'}`;
+    countEl.textContent = `${filtered.length} member${filtered.length === 1 ? '' : 's'}`;
   }
 
   if (filtered.length === 0) {
@@ -1058,7 +1283,7 @@ async function renderMembersTable() {
             <button class="btn btn-ghost btn-sm btn-toggle-member" data-id="${member.id}">
               ${member.is_active ? '⏸️ Deactivate' : '▶️ Activate'}
             </button>
-            <button class="btn btn-ghost btn-sm btn-delete-member" data-id="${member.id}" style="color:var(--accent-rose);" title="Delete user record">
+            <button class="btn btn-ghost btn-sm btn-delete-member" data-id="${member.id}" style="color:var(--accent-rose);" title="Delete member">
               🗑️
             </button>
           </div>
@@ -1079,17 +1304,27 @@ async function renderMembersTable() {
 
   tbody.querySelectorAll('.btn-toggle-member').forEach((btn) => {
     btn.onclick = async () => {
-      await dbService.toggleMemberStatus(btn.dataset.id);
-      showToast('User activation status updated', 'success');
+      try {
+        await dbService.toggleMemberStatus(btn.dataset.id);
+      } catch (err) {
+        showToast(err.message, 'error');
+        return;
+      }
+      showToast('Member status updated', 'success');
       await refreshAllData();
     };
   });
 
   tbody.querySelectorAll('.btn-delete-member').forEach((btn) => {
     btn.onclick = async () => {
-      if (confirm('Are you sure you want to delete this user record?')) {
-        await dbService.deleteMember(btn.dataset.id);
-        showToast('User record removed', 'success');
+      if (confirm('Delete this member? Their attendance history is deleted too.')) {
+        try {
+          await dbService.deleteMember(btn.dataset.id);
+        } catch (err) {
+          showToast(err.message, 'error');
+          return;
+        }
+        showToast('Member deleted', 'success');
         await refreshAllData();
       }
     };
@@ -1218,24 +1453,6 @@ function setupEventListeners() {
     };
   });
 
-  // In-App Camera Scanner Button in Admin Topbar
-  const btnAdminScanner = document.getElementById('btnAdminCameraScanner');
-  if (btnAdminScanner) {
-    btnAdminScanner.onclick = () => {
-      openInAppScanner({
-        title: 'Admin Camera Scanner',
-        instruction: 'Scan Event Static QR, Staff Mobile Beacon, or Attendee Badge',
-        onScanSuccess: (decodedText) => {
-          console.log('[AdminScanner] Scanned text:', decodedText);
-          showToast(`Scanned Code: ${decodedText.substring(0, 50)}...`, 'info');
-          if (decodedText.startsWith('http')) {
-            window.open(decodedText, '_blank');
-          }
-        }
-      });
-    };
-  }
-
   // Create Event Button & Modal
   const btnOpenCreate = document.getElementById('btnOpenCreateEvent');
   const createModal = document.getElementById('createEventModal');
@@ -1339,8 +1556,15 @@ function setupEventListeners() {
           latitude: document.getElementById('eventLatitude').value || null,
           longitude: document.getElementById('eventLongitude').value || null,
           radius_meters: Number(document.getElementById('eventRadius').value) || 50,
-          location_required: document.getElementById('eventLocationRequired').checked
+          location_required: document.getElementById('eventLocationRequired').checked,
+          late_grace_minutes: readLateGrace('eventLateGrace'),
+          checkout_enabled: document.getElementById('eventCheckoutEnabled').checked
         };
+
+        if (payload.location_required && !hasVenueCoordinates(payload)) {
+          showToast('Set the venue location on the map (or untick "Enforce Geofence GPS Check") before creating the event.', 'error');
+          return;
+        }
 
         await dbService.createEvent(payload);
         createModal.classList.remove('active');
@@ -1425,8 +1649,15 @@ function setupEventListeners() {
           latitude: document.getElementById('editEventLatitude').value ? Number(document.getElementById('editEventLatitude').value) : null,
           longitude: document.getElementById('editEventLongitude').value ? Number(document.getElementById('editEventLongitude').value) : null,
           radius_meters: Number(document.getElementById('editEventRadius').value) || 50,
-          location_required: document.getElementById('editEventLocationRequired').checked
+          location_required: document.getElementById('editEventLocationRequired').checked,
+          late_grace_minutes: readLateGrace('editEventLateGrace'),
+          checkout_enabled: document.getElementById('editEventCheckoutEnabled').checked
         };
+
+        if (payload.location_required && !hasVenueCoordinates(payload)) {
+          showToast('Set the venue location on the map (or untick "Enforce Geofence GPS Check") before saving.', 'error');
+          return;
+        }
 
         const updated = await dbService.updateEvent(eventId, payload);
         if (updated) {
@@ -1608,34 +1839,38 @@ function setupEventListeners() {
   const btnExport = document.getElementById('btnExportCsv');
   if (btnExport) btnExport.onclick = () => exportAttendanceToCSV();
 
-  // QR Modal Buttons: Download PNG, Print, Copy
-  const btnDownloadQr = document.getElementById('btnDownloadQr');
-  const btnPrintQr = document.getElementById('btnPrintQrSignage');
-  const btnCopyLink = document.getElementById('btnCopyQrLink');
+  // Present / Pending switch
+  const btnViewPresent = document.getElementById('btnViewPresent');
+  const btnViewPending = document.getElementById('btnViewPending');
+  if (btnViewPresent) btnViewPresent.onclick = () => setAttendanceView('present');
+  if (btnViewPending) btnViewPending.onclick = () => setAttendanceView('pending');
 
-  if (btnDownloadQr) {
-    btnDownloadQr.onclick = async () => {
-      if (!state.selectedEventForQr) return;
-      const url = buildEventCheckInUrl(state.selectedEventForQr.id, state.selectedEventForQr.qr_token);
-      await downloadQrCode(url, `${state.selectedEventForQr.event_code}-QR.png`);
-      showToast('QR Code downloaded', 'success');
-    };
-  }
+  // Manual attendance (admin marks a pending member present)
+  const manualMarkForm = document.getElementById('manualMarkForm');
+  if (manualMarkForm) {
+    manualMarkForm.onsubmit = async (e) => {
+      e.preventDefault();
+      const pending = state.pendingManualMark;
+      const reason = document.getElementById('manualMarkReason').value.trim();
+      const btn = document.getElementById('btnConfirmManualMark');
+      if (!pending || !reason) return;
 
-  if (btnPrintQr) {
-    btnPrintQr.onclick = () => {
-      if (state.selectedEventForQr) {
-        printEventQrSignage(state.selectedEventForQr);
+      btn.disabled = true;
+      try {
+        const result = await dbService.adminMarkAttendance(pending.eventId, pending.memberId, reason);
+        if (!result?.success) {
+          showToast(result?.message || 'Could not mark attendance.', 'error');
+          return;
+        }
+        document.getElementById('manualMarkModal').classList.remove('active');
+        state.pendingManualMark = null;
+        showToast(`${result.data.full_name} marked present (manual).`, 'success');
+        await syncAttendanceSince();
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        btn.disabled = false;
       }
-    };
-  }
-
-  if (btnCopyLink) {
-    btnCopyLink.onclick = () => {
-      const input = document.getElementById('qrDirectLink');
-      input.select();
-      navigator.clipboard.writeText(input.value);
-      showToast('Check-in link copied to clipboard!', 'info');
     };
   }
 
@@ -1657,10 +1892,10 @@ function setupEventListeners() {
       const bannerEl = document.getElementById('memberTransferBanner');
       const saveBtn = document.getElementById('btnSaveMember');
 
-      if (titleEl) titleEl.textContent = 'Add Master User Record';
+      if (titleEl) titleEl.textContent = 'Add Member';
       if (subtitleEl) subtitleEl.style.display = 'none';
       if (bannerEl) bannerEl.style.display = 'none';
-      if (saveBtn) saveBtn.textContent = 'Save User';
+      if (saveBtn) saveBtn.textContent = 'Save Member';
 
       // Populate divisions
       memberDivSelect.innerHTML = '<option value="">Select Division</option>' +
@@ -1706,7 +1941,7 @@ function setupEventListeners() {
           const brName = br ? br.name : 'new branch';
           showToast(`✅ ${payload.full_name} updated successfully! Allocated to ${brName}.`, 'success');
         } else {
-          showToast('User record saved successfully', 'success');
+          showToast('Member saved', 'success');
         }
         await refreshAllData();
       } catch (err) {
@@ -1999,143 +2234,112 @@ function setupEventListeners() {
   }
 }
 
-let realtimePollInterval = null;
+// Live feed: Supabase Realtime pushes changes; while the socket is down, poll for changes since the
+// newest record we have (never the whole table).
+const FALLBACK_POLL_MS = 15000;
+let realtimeUnsubscribe = null;
+let fallbackPollInterval = null;
+
+// Newest check-in or check-out time across records, as an ISO string
+function latestChangeTime(records) {
+  let latest = null;
+  for (const r of records) {
+    for (const t of [r.check_in_time, r.check_out_time]) {
+      if (t && (!latest || t > latest)) latest = t;
+    }
+  }
+  return latest;
+}
+
+function stopRealtimeFeed() {
+  if (realtimeUnsubscribe) realtimeUnsubscribe();
+  if (fallbackPollInterval) clearInterval(fallbackPollInterval);
+  realtimeUnsubscribe = null;
+  fallbackPollInterval = null;
+}
 
 function setupRealtimeFeed() {
-  // 1. Supabase Realtime WebSocket Listener
-  dbService.subscribeToAttendance((newRecord) => {
-    handleNewLiveAttendance(newRecord);
-  });
+  // Re-login must not stack a second subscription
+  stopRealtimeFeed();
 
-  // 2. High-reliability Polling Sync (guarantees screen updates even if WebSocket drops)
-  if (realtimePollInterval) clearInterval(realtimePollInterval);
-  realtimePollInterval = setInterval(async () => {
-    try {
-      const records = await dbService.getAttendanceRecords();
-      if (!Array.isArray(records) || records.length === 0) return;
+  realtimeUnsubscribe = dbService.subscribeToAttendance(
+    (record) => applyLiveAttendance(record),
+    { onStatus: (status) => setLiveStatus(status) }
+  );
 
-      const currentIds = new Set(state.attendance.map((r) => r.id));
-      // Process newest records first
-      for (const r of records) {
-        if (!currentIds.has(r.id)) {
-          handleNewLiveAttendance(r);
-          currentIds.add(r.id);
-        }
-      }
-    } catch (err) {
-      // Background poll silently catches network hiccups
+  fallbackPollInterval = setInterval(() => {
+    if (state.liveStatus !== 'live' && document.visibilityState === 'visible') {
+      syncAttendanceSince();
     }
-  }, 3000);
+  }, FALLBACK_POLL_MS);
 }
 
-function handleNewLiveAttendance(newRecord) {
-  if (!newRecord) return;
-
-  // Prevent duplicate insertion in local state
-  const exists = state.attendance.some((r) => r.id === newRecord.id);
-  if (!exists) {
-    state.attendance.unshift(newRecord);
-  }
-
-  // Play audio chime
-  soundController.playDing();
-
-  // Update Live Ticker
-  const tickerMsg = document.getElementById('tickerMessage');
-  if (tickerMsg) {
-    const distText = newRecord.distance_meters !== null ? `(📍 ${Math.round(newRecord.distance_meters)}m)` : '';
-    tickerMsg.innerHTML = `<strong>Just checked in:</strong> ${escapeHtml(newRecord.full_name || 'Attendee')} • <span class="badge badge-info">${escapeHtml(newRecord.role || 'Staff')}</span> • ${escapeHtml(newRecord.event_name || 'Event')} ${distText}`;
-  }
-
-  // Update KPIs
-  renderKpis();
-
-  // Prepend live row with emerald flash animation
-  prependLiveAttendanceRow(newRecord);
-
-  // Update visual analytics charts
-  updateVisualAnalytics(state);
-
-  // Notification Toast
-  showToast(`⚡ Live check-in: ${newRecord.full_name || 'Attendee'} (${newRecord.member_code || 'Code'})`, 'success');
+function setLiveStatus(status) {
+  state.liveStatus = status;
+  const pill = document.querySelector('.live-status-pill');
+  const text = document.querySelector('.live-status-text');
+  if (pill) pill.classList.toggle('is-polling', status !== 'live');
+  if (text) text.textContent = status === 'live' ? 'LIVE REALTIME FEED ACTIVE' : `RECONNECTING • CHECKING EVERY ${FALLBACK_POLL_MS / 1000}s`;
+  // Catch up on anything missed while the socket was down
+  if (status === 'live') syncAttendanceSince();
 }
 
-function prependLiveAttendanceRow(record) {
-  const tbody = document.getElementById('attendanceTableBody');
-  const countEl = document.getElementById('attendanceRecordCount');
-  if (!tbody) return;
+/**
+ * Fetches only rows checked in or out since the last change we have
+ */
+async function syncAttendanceSince() {
+  try {
+    const changes = await dbService.getAttendanceRecords(state.lastSyncAt ? { since: state.lastSyncAt } : {});
+    // Oldest first so the newest change ends up highlighted
+    [...changes].reverse().forEach((record) => applyLiveAttendance(record, { quiet: changes.length > 5 }));
+  } catch (err) {
+    console.warn('Attendance sync failed:', err);
+  }
+}
 
-  // Filter check
-  const f = state.activeFilters;
-  if (f.eventId && f.eventId !== record.event_id) return;
-  if (f.checkInMode && f.checkInMode !== 'All' && f.checkInMode !== record.check_in_mode) return;
-  if (f.role && f.role !== 'All' && f.role !== record.role) return;
-  if (f.divisionId && f.divisionId !== 'All' && f.divisionId !== record.division_id) return;
-  if (f.branchId && f.branchId !== 'All' && f.branchId !== record.branch_id) return;
+/**
+ * Inserts a new record or updates an existing one (check-out, manual edit).
+ * Chimes and toasts only for check-ins this dashboard has not seen before.
+ */
+function applyLiveAttendance(record, { quiet = false } = {}) {
+  if (!record || !record.id) return;
 
-  // Deduplication check: do not add duplicate row if already rendered
-  if (record.id && tbody.querySelector(`tr[data-record-id="${record.id}"]`)) {
+  const idx = state.attendance.findIndex((r) => r.id === record.id);
+  const isNew = idx === -1;
+  const previous = isNew ? null : state.attendance[idx];
+  const isNewCheckOut = !isNew && record.check_out_time && !previous.check_out_time;
+
+  if (isNew) {
+    state.attendance.unshift(record);
+  } else {
+    state.attendance[idx] = { ...previous, ...record };
+  }
+
+  const changeTime = latestChangeTime([record]);
+  if (changeTime && (!state.lastSyncAt || changeTime > state.lastSyncAt)) state.lastSyncAt = changeTime;
+
+  if (!isNew && !isNewCheckOut) {
+    // Same record seen again (another channel or poll overlap): refresh quietly
+    renderAttendanceTable();
     return;
   }
 
-  // Clear empty state row if present
-  if (tbody.querySelector('.empty-state')) {
-    tbody.innerHTML = '';
+  const tickerMsg = document.getElementById('tickerMessage');
+  if (tickerMsg) {
+    const verb = isNewCheckOut ? 'Just checked out' : 'Just checked in';
+    const distText = record.distance_meters !== null && record.distance_meters !== undefined ? `(📍 ${Math.round(record.distance_meters)}m)` : '';
+    tickerMsg.innerHTML = `<strong>${verb}:</strong> ${escapeHtml(record.full_name || 'Attendee')} • <span class="badge badge-info">${escapeHtml(record.role || 'Staff')}</span> • ${escapeHtml(record.event_name || 'Event')} ${distText}`;
   }
 
-  const timeStr = new Date(record.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  const dateStr = new Date(record.check_in_time).toLocaleDateString();
-  const roleBadge = record.role === 'Staff'
-    ? '<span class="badge badge-info">Staff</span>'
-    : '<span class="badge badge-warning">Agent</span>';
+  renderKpis();
+  renderAttendanceTable({ highlightId: record.id });
+  updateVisualAnalytics(state);
 
-  const distanceBadge = record.distance_meters !== null && record.distance_meters !== undefined
-    ? `<span class="badge badge-success">📍 ${Math.round(record.distance_meters)}m</span>`
-    : '<span class="badge badge-neutral">GPS N/A</span>';
-
-  let modeBadge = '<span class="badge badge-mode-venue">Static QR</span>';
-  if (record.check_in_mode === 'HOST_SELF') {
-    modeBadge = '<span class="badge badge-mode-self" title="Authorized Host Self Check-In">⭐ Host Self</span>';
-  } else if (record.check_in_mode === 'ATTENDEE_SCAN') {
-    const hName = record.host_name ? escapeHtml(record.host_name) : (record.host_member_code || 'Staff');
-    const hStation = record.host_station ? ` • ${escapeHtml(record.host_station)}` : '';
-    modeBadge = `<span class="badge badge-mode-scan" title="Scanned via Host: ${hName}">📲 ${hName}${hStation}</span>`;
-  }
-
-  const tr = document.createElement('tr');
-  tr.className = 'row-live-highlight';
-  if (record.id) {
-    tr.setAttribute('data-record-id', record.id);
-  }
-  tr.innerHTML = `
-    <td>
-      <div style="font-weight:700;color:var(--text-primary);">${escapeHtml(record.full_name || 'Unknown')}</div>
-      <div style="font-size:0.75rem;font-family:monospace;color:var(--text-muted);">${escapeHtml(record.member_code)}</div>
-    </td>
-    <td>${roleBadge}</td>
-    <td>
-      <div style="font-weight:600;">${escapeHtml(record.division_name || 'N/A')}</div>
-      <div style="font-size:0.75rem;color:var(--text-muted);">${escapeHtml(record.branch_name || 'N/A')}</div>
-    </td>
-    <td>
-      <div style="font-weight:600;">${escapeHtml(record.event_name || 'Event')}</div>
-    </td>
-    <td>
-      <div>${timeStr}</div>
-      <div style="font-size:0.75rem;color:var(--text-muted);">${dateStr}</div>
-    </td>
-    <td>${distanceBadge}</td>
-    <td>${modeBadge}</td>
-    <td>
-      <span class="badge badge-success">VERIFIED</span>
-    </td>
-  `;
-
-  tbody.insertBefore(tr, tbody.firstChild);
-
-  if (countEl) {
-    const visibleCount = tbody.querySelectorAll('tr').length;
-    countEl.textContent = `${visibleCount} record${visibleCount === 1 ? '' : 's'}`;
+  if (!quiet) {
+    soundController.playDing();
+    const label = isNewCheckOut ? 'Check-out' : 'Live check-in';
+    const flag = record.verification_status === 'FLAGGED' ? ' • flagged for review' : '';
+    showToast(`⚡ ${label}: ${record.full_name || 'Attendee'} (${record.member_code || 'Code'})${flag}`, record.verification_status === 'FLAGGED' ? 'warning' : 'success');
   }
 }
 
@@ -2149,14 +2353,6 @@ function setupLiveStreamControls() {
       const active = soundController.toggle();
       btnToggleSound.innerHTML = active ? '🔔 <span id="soundToggleLabel">Sound: ON</span>' : '🔕 <span id="soundToggleLabel">Sound: OFF</span>';
       showToast(active ? 'Live audio chime enabled' : 'Live audio chime muted', 'info');
-    };
-  }
-
-  const btnRefreshAnalytics = document.getElementById('btnRefreshAnalytics');
-  if (btnRefreshAnalytics) {
-    btnRefreshAnalytics.onclick = () => {
-      updateVisualAnalytics(state, document.getElementById('analyticsEventFilter')?.value || 'All');
-      showToast('Visual analytics updated', 'info');
     };
   }
 }

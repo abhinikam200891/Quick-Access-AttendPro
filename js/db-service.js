@@ -3,9 +3,9 @@
  * Supports both live Supabase backend and an exact local mock engine with atomic RPC validation.
  */
 
-import { calculateDistanceMeters } from './haversine.js';
+import { evaluateGeofence } from './haversine.js';
 import { getSupabaseClient, getSupabaseConfig } from './supabase-config.js';
-import { verifyDynamicQrToken, DEFAULT_HOST_SECRET_SALT } from './dynamic-qr.js';
+import { verifyDynamicQrToken } from './dynamic-qr.js';
 
 // Default Seed Data for local testing / demo mode
 const INITIAL_DIVISIONS = [
@@ -284,6 +284,8 @@ const INITIAL_EVENTS = [
     radius_meters: 100,
     location_required: false, // relaxed for initial easy testing anywhere
     qr_token: 'token-th-2026-xyz',
+    late_grace_minutes: 15,
+    checkout_enabled: true,
     is_active: true,
     created_at: new Date().toISOString()
   },
@@ -301,6 +303,8 @@ const INITIAL_EVENTS = [
     radius_meters: 50,
     location_required: true,
     qr_token: 'token-ag-2026-abc',
+    late_grace_minutes: 15,
+    checkout_enabled: false,
     is_active: true,
     created_at: new Date().toISOString()
   }
@@ -570,12 +574,18 @@ function broadcastNewAttendance(record) {
 }
 
 // Helper to manage localStorage Mock DB
+// Seeding is lazy so devices running against live Supabase never get demo data.
 class MockDatabase {
   constructor() {
-    this.init();
+    this.initialized = false;
+  }
+
+  ensureInit() {
+    if (!this.initialized) this.init();
   }
 
   init() {
+    this.initialized = true;
     if (!localStorage.getItem('db_divisions')) {
       localStorage.setItem('db_divisions', JSON.stringify(INITIAL_DIVISIONS));
     }
@@ -611,10 +621,12 @@ class MockDatabase {
   }
 
   get(table) {
+    this.ensureInit();
     return JSON.parse(localStorage.getItem(`db_${table}`) || '[]');
   }
 
   save(table, data) {
+    this.ensureInit();
     localStorage.setItem(`db_${table}`, JSON.stringify(data));
   }
 
@@ -632,6 +644,76 @@ class MockDatabase {
 
 const mockDb = new MockDatabase();
 
+// In live Supabase mode a failed call must surface as an error, never fall back to local demo data
+function liveError(action, error) {
+  const detail = error?.message || String(error || 'Unknown error');
+  return new Error(`Could not ${action}: ${detail}`);
+}
+
+// Single select for attendance rows; host details come through the host_member_id foreign key
+const ATTENDANCE_SELECT = `
+  id,
+  event_id,
+  member_id,
+  check_in_time,
+  latitude,
+  longitude,
+  accuracy_meters,
+  distance_meters,
+  is_late,
+  check_out_time,
+  check_out_distance_meters,
+  verification_status,
+  verification_notes,
+  check_in_mode,
+  host_member_id,
+  events (id, name, venue, date),
+  members:members!attendance_member_id_fkey (
+    id, role, member_code, full_name, phone_number, division_id, branch_id
+  ),
+  host:members!attendance_host_member_id_fkey (member_code, full_name)
+`;
+
+function normalizeAttendanceRow(row, divMap, branchMap) {
+  const mem = row.members || {};
+  return {
+    id: row.id,
+    event_id: row.events?.id || row.event_id,
+    event_name: row.events?.name || 'Event',
+    venue: row.events?.venue || '',
+    member_id: mem.id || row.member_id,
+    member_code: mem.member_code || '',
+    full_name: mem.full_name || 'Attendee',
+    role: mem.role || 'Staff',
+    phone_number: mem.phone_number || '',
+    division_id: mem.division_id || '',
+    division_name: divMap.get(mem.division_id) || 'Division',
+    branch_id: mem.branch_id || '',
+    branch_name: branchMap.get(mem.branch_id) || 'Branch',
+    check_in_time: row.check_in_time,
+    accuracy_meters: row.accuracy_meters ?? null,
+    distance_meters: row.distance_meters,
+    is_late: Boolean(row.is_late),
+    check_out_time: row.check_out_time || null,
+    check_out_distance_meters: row.check_out_distance_meters ?? null,
+    verification_status: row.verification_status,
+    verification_notes: row.verification_notes || null,
+    check_in_mode: row.check_in_mode || 'ATTENDEE_SCAN',
+    host_member_id: row.host_member_id || null,
+    host_member_code: row.host?.member_code || null,
+    host_name: row.host?.full_name || null
+  };
+}
+
+// Divisions and branches rarely change; cache them per page load so live updates
+// and attendance refreshes do not refetch them every time
+const lookupCache = { divisions: null, branches: null };
+
+function invalidateLookupCache() {
+  lookupCache.divisions = null;
+  lookupCache.branches = null;
+}
+
 // DB SERVICE
 export const dbService = {
   // Check if live Supabase is active
@@ -644,9 +726,12 @@ export const dbService = {
   async getDivisions() {
     const supabase = getSupabaseClient();
     if (supabase) {
-      const { data, error } = await supabase.from('divisions').select('*').order('name');
-      if (!error && data) return data;
-      console.warn('Supabase getDivisions failed, fallback to local', error);
+      if (!lookupCache.divisions) {
+        const { data, error } = await supabase.from('divisions').select('*').order('name');
+        if (error) throw liveError('load divisions', error);
+        lookupCache.divisions = data || [];
+      }
+      return lookupCache.divisions;
     }
     return mockDb.get('divisions');
   },
@@ -654,11 +739,14 @@ export const dbService = {
   async getBranches(divisionId = null) {
     const supabase = getSupabaseClient();
     if (supabase) {
-      let query = supabase.from('branches').select('*').order('name');
-      if (divisionId) query = query.eq('division_id', divisionId);
-      const { data, error } = await query;
-      if (!error && data) return data;
-      console.warn('Supabase getBranches failed, fallback to local', error);
+      if (!lookupCache.branches) {
+        const { data, error } = await supabase.from('branches').select('*').order('name');
+        if (error) throw liveError('load branches', error);
+        lookupCache.branches = data || [];
+      }
+      return divisionId
+        ? lookupCache.branches.filter((b) => b.division_id === divisionId)
+        : lookupCache.branches;
     }
 
     const branches = mockDb.get('branches');
@@ -677,11 +765,8 @@ export const dbService = {
         query = query.eq('is_active', filters.isActive);
       }
       const { data, error } = await query;
-      if (!error && Array.isArray(data)) return data;
-      console.warn('Supabase getEvents failed:', error);
-      if (this.isUsingSupabase()) {
-        return [];
-      }
+      if (error) throw liveError('load events', error);
+      return data || [];
     }
 
     let events = mockDb.get('events');
@@ -691,26 +776,15 @@ export const dbService = {
     return events;
   },
 
-  async getEventById(eventId, token = null) {
+  async getEventById(eventId) {
     const supabase = getSupabaseClient();
     if (supabase) {
-      let query = supabase.from('events').select('*').eq('id', eventId);
-      const { data, error } = await query.single();
-      if (!error && data) {
-        if (token && data.qr_token && data.qr_token !== token) {
-          throw new Error('Security token mismatch. Please re-scan QR code.');
-        }
-        return data;
-      }
+      const { data, error } = await supabase.from('events').select('*').eq('id', eventId).maybeSingle();
+      if (error) throw liveError('load the event', error);
+      return data || null;
     }
 
-    const events = mockDb.get('events');
-    const event = events.find((e) => e.id === eventId);
-    if (!event) return null;
-    if (token && event.qr_token && event.qr_token !== token) {
-      throw new Error('Security token mismatch. Please re-scan QR code.');
-    }
-    return event;
+    return mockDb.get('events').find((e) => e.id === eventId) || null;
   },
 
   async createEvent(eventData) {
@@ -727,7 +801,10 @@ export const dbService = {
       longitude: eventData.longitude ? Number(eventData.longitude) : null,
       radius_meters: Number(eventData.radius_meters) || 50,
       location_required: eventData.location_required ?? true,
-      qr_token: crypto.randomUUID().replace(/-/g, ''),
+      // Event date and times are local to the admin's timezone; the server checks the window in this zone
+      timezone: eventData.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
+      late_grace_minutes: Number.isFinite(Number(eventData.late_grace_minutes)) ? Number(eventData.late_grace_minutes) : 15,
+      checkout_enabled: Boolean(eventData.checkout_enabled),
       is_active: eventData.is_active ?? true,
       created_at: new Date().toISOString()
     };
@@ -735,8 +812,8 @@ export const dbService = {
     const supabase = getSupabaseClient();
     if (supabase) {
       const { data, error } = await supabase.from('events').insert([newEvent]).select().single();
-      if (!error && data) return data;
-      console.warn('Supabase createEvent failed, saving locally', error);
+      if (error) throw liveError('create the event', error);
+      return data;
     }
 
     const events = mockDb.get('events');
@@ -757,31 +834,21 @@ export const dbService = {
     if (eventData.longitude !== undefined) updatePayload.longitude = eventData.longitude !== null && eventData.longitude !== '' ? Number(eventData.longitude) : null;
     if (eventData.radius_meters !== undefined) updatePayload.radius_meters = Number(eventData.radius_meters) || 50;
     if (eventData.location_required !== undefined) updatePayload.location_required = Boolean(eventData.location_required);
+    if (eventData.late_grace_minutes !== undefined) updatePayload.late_grace_minutes = Number(eventData.late_grace_minutes) || 0;
+    if (eventData.checkout_enabled !== undefined) updatePayload.checkout_enabled = Boolean(eventData.checkout_enabled);
     if (eventData.is_active !== undefined) updatePayload.is_active = Boolean(eventData.is_active);
     updatePayload.updated_at = new Date().toISOString();
 
     const supabase = getSupabaseClient();
     if (supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('events')
-          .update(updatePayload)
-          .eq('id', eventId)
-          .select()
-          .single();
-        if (!error && data) {
-          const events = mockDb.get('events');
-          const idx = events.findIndex((e) => e.id === eventId);
-          if (idx !== -1) {
-            events[idx] = { ...events[idx], ...data };
-            mockDb.save('events', events);
-          }
-          return data;
-        }
-        if (error) console.warn('Supabase updateEvent error, saving locally:', error);
-      } catch (err) {
-        console.warn('Supabase updateEvent exception:', err);
-      }
+      const { data, error } = await supabase
+        .from('events')
+        .update(updatePayload)
+        .eq('id', eventId)
+        .select()
+        .single();
+      if (error) throw liveError('update the event', error);
+      return data;
     }
 
     const events = mockDb.get('events');
@@ -798,7 +865,8 @@ export const dbService = {
     const supabase = getSupabaseClient();
     if (supabase) {
       const { error } = await supabase.from('events').update({ is_active: isActive }).eq('id', eventId);
-      if (!error) return true;
+      if (error) throw liveError('change the event status', error);
+      return true;
     }
 
     const events = mockDb.get('events');
@@ -826,6 +894,7 @@ export const dbService = {
         console.error('Supabase deleteEvent error:', error);
         throw new Error(error.message || 'Failed to delete event from database');
       }
+      return true;
     }
 
     let events = mockDb.get('events');
@@ -835,22 +904,47 @@ export const dbService = {
   },
 
   // 3. SECURE CHECK-IN SUBMISSION (Calls PostgreSQL RPC in Supabase or Local Replica)
+  /**
+   * Exchanges a scanned rotating host QR for a one-time scan ticket (valid 10 minutes).
+   * The QR itself is accepted for about 60 seconds only, so screenshots shared later fail.
+   */
+  async redeemHostScan({ eventId, hostCode, windowEpoch, signature }) {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { data, error } = await supabase.rpc('redeem_host_scan', {
+        p_event_id: eventId,
+        p_host_code: hostCode,
+        p_window_epoch: windowEpoch,
+        p_signature: signature,
+        p_user_agent: navigator.userAgent
+      });
+      if (error) {
+        console.error('redeem_host_scan failed:', error);
+        return { success: false, code: 'NETWORK_ERROR', message: 'Could not verify the QR code. Check your internet connection and scan again.' };
+      }
+      return data;
+    }
+    return this.mockRedeemHostScan({ eventId, hostCode, windowEpoch, signature });
+  },
+
   async submitAttendance(payload) {
     const {
       eventId,
-      qrToken,
       role,
       memberCode,
       phoneNumber,
       divisionId,
       branchId,
-      latitude,
-      longitude,
-      userAgent = navigator.userAgent,
-      checkInMode = 'ATTENDEE_SCAN', // 'ATTENDEE_SCAN' | 'HOST_SELF' | 'VENUE_STATIC_QR'
-      hostCode = null,
-      windowEpoch = null,
-      tokenSignature = null
+      checkInMode, // 'ATTENDEE_SCAN' | 'HOST_SELF'
+      scanTicket = null,
+      hostKey = null,
+      latitude = null,
+      longitude = null,
+      accuracy = null,
+      positionAgeMs = null,
+      gpsSuspicious = false,
+      action = 'CHECK_IN', // 'CHECK_IN' | 'CHECK_OUT'
+      userAgent = navigator.userAgent
     } = payload;
 
     const supabase = getSupabaseClient();
@@ -858,40 +952,40 @@ export const dbService = {
       try {
         const { data, error } = await supabase.rpc('submit_attendance', {
           p_event_id: eventId,
-          p_qr_token: qrToken || '',
           p_role: role,
           p_member_code: memberCode,
           p_phone_number: phoneNumber,
           p_division_id: divisionId,
           p_branch_id: branchId,
-          p_latitude: latitude || null,
-          p_longitude: longitude || null,
-          p_user_agent: userAgent,
           p_check_in_mode: checkInMode,
-          p_host_code: hostCode,
-          p_window_epoch: windowEpoch ? Number(windowEpoch) : null,
-          p_token_signature: tokenSignature
+          p_scan_ticket: scanTicket,
+          p_host_key: hostKey,
+          p_latitude: latitude ?? null,
+          p_longitude: longitude ?? null,
+          p_accuracy: accuracy ?? null,
+          p_position_age_ms: positionAgeMs === null || positionAgeMs === undefined ? null : Math.round(positionAgeMs),
+          p_gps_suspicious: Boolean(gpsSuspicious),
+          p_action: action,
+          p_user_agent: userAgent
         });
 
         if (error) {
           return { success: false, code: 'RPC_ERROR', message: error.message };
         }
-        if (data && data.success && data.data) {
-          const ticketId = data.data.ticket_id;
-          if (ticketId) {
-            this.getAttendanceRecordById(ticketId).then((fullRec) => {
-              if (fullRec) {
-                try {
-                  localStorage.setItem('attendpro_last_attendance_event', JSON.stringify({ time: Date.now(), record: fullRec }));
-                } catch (e) {}
-                broadcastNewAttendance(fullRec);
-              }
-            }).catch(() => {});
-          }
+        if (data && data.success && data.data?.ticket_id && !data.already_recorded) {
+          this.getAttendanceRecordById(data.data.ticket_id).then((fullRec) => {
+            if (fullRec) broadcastNewAttendance(fullRec);
+          }).catch(() => {});
         }
         return data;
       } catch (err) {
-        console.warn('RPC invocation failed, falling back to local verification', err);
+        // Never fall back to the local engine here: that would show a pass for attendance the server never recorded
+        console.error('submit_attendance RPC failed:', err);
+        return {
+          success: false,
+          code: 'NETWORK_ERROR',
+          message: 'Your attendance could not be sent to the server. Check your internet connection and try again.'
+        };
       }
     }
 
@@ -899,271 +993,343 @@ export const dbService = {
     return await this.mockSubmitAttendanceRPC(payload);
   },
 
-  // High-fidelity replica of the PostgreSQL stored procedure with dynamic QR rotation verification
-  async mockSubmitAttendanceRPC(p) {
-    const events = mockDb.get('events');
-    const event = events.find((e) => e.id === p.eventId);
-    const auditLogs = mockDb.get('audit_logs');
-    const eventHosts = mockDb.get('event_hosts');
-
-    const logAudit = (status, action, details) => {
-      auditLogs.unshift({
-        id: crypto.randomUUID(),
-        event_id: p.eventId,
-        action,
-        status,
-        details,
-        user_agent: p.userAgent || navigator.userAgent,
-        created_at: new Date().toISOString()
+  /**
+   * Admin: mark a member present by hand (phone dead, GPS unavailable). Always audited.
+   */
+  async adminMarkAttendance(eventId, memberId, reason) {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { data, error } = await supabase.rpc('admin_mark_attendance', {
+        p_event_id: eventId,
+        p_member_id: memberId,
+        p_reason: reason
       });
-      mockDb.save('audit_logs', auditLogs);
-    };
-
-    // 1. Event existence
-    if (!event) {
-      logAudit('REJECTED', 'CHECK_IN_ATTEMPT', { reason: 'Event does not exist' });
-      return { success: false, code: 'EVENT_NOT_FOUND', message: 'The requested event was not found. Please re-scan the QR code.' };
+      if (error) throw liveError('mark attendance', error);
+      return data;
     }
 
-    // 2. Active status
-    if (!event.is_active) {
-      logAudit('REJECTED', 'CHECK_IN_ATTEMPT', { reason: 'Event deactivated' });
-      return { success: false, code: 'EVENT_INACTIVE', message: 'This event check-in portal has been deactivated by the administrator.' };
-    }
+    const event = mockDb.get('events').find((e) => e.id === eventId);
+    const members = await this.getMembers();
+    const member = members.find((m) => m.id === memberId);
+    if (!event || !member) return { success: false, code: 'NOT_FOUND', message: 'Event or member not found.' };
+    if (!String(reason || '').trim()) return { success: false, code: 'REASON_REQUIRED', message: 'Enter a reason for the manual entry.' };
 
-    // Determine Check-in Mode & Host
-    let host = null;
-    const checkInMode = p.checkInMode || (p.hostCode ? 'ATTENDEE_SCAN' : 'VENUE_STATIC_QR');
-
-    // 3. Dynamic QR Token & Host Verification
-    if (checkInMode === 'HOST_SELF') {
-      // Host is marking their own attendance directly from the Beacon screen
-      host = eventHosts.find(
-        (h) => h.event_id === event.id &&
-               h.member_code.toUpperCase() === String(p.memberCode).trim().toUpperCase() &&
-               h.is_active
-      );
-      if (!host) {
-        logAudit('REJECTED', 'CHECK_IN_ATTEMPT', { reason: 'Unauthorized host self check-in', code: p.memberCode });
-        return {
-          success: false,
-          code: 'HOST_NOT_AUTHORIZED',
-          message: 'You are not designated as an authorized QR display host for this event.'
-        };
-      }
-    } else if (p.hostCode) {
-      // Attendee scanned a dynamic host QR code on an authorized staff member's screen
-      host = eventHosts.find(
-        (h) => h.event_id === event.id &&
-               h.member_code.toUpperCase() === String(p.hostCode).trim().toUpperCase() &&
-               h.is_active
-      );
-      if (!host) {
-        logAudit('REJECTED', 'CHECK_IN_ATTEMPT', { reason: 'Host not recognized', hostCode: p.hostCode });
-        return {
-          success: false,
-          code: 'HOST_NOT_AUTHORIZED',
-          message: 'The staff member displaying this QR code is not registered as an authorized beacon host for this event.'
-        };
-      }
-
-      // Verify dynamic rotating token validity (max 20-30s age window)
-      const secret = host.host_secret || DEFAULT_HOST_SECRET_SALT;
-      const verifyRes = await verifyDynamicQrToken(event.id, p.hostCode, secret, p.windowEpoch, p.tokenSignature);
-      if (!verifyRes.valid) {
-        logAudit('REJECTED', 'CHECK_IN_ATTEMPT', { reason: verifyRes.message, code: verifyRes.code, hostCode: p.hostCode });
-        return {
-          success: false,
-          code: verifyRes.code,
-          message: verifyRes.message
-        };
-      }
-    } else if (event.qr_token && p.qrToken && event.qr_token !== p.qrToken) {
-      // Static QR code fallback
-      logAudit('REJECTED', 'CHECK_IN_ATTEMPT', { reason: 'Token mismatch' });
-      return { success: false, code: 'INVALID_QR_TOKEN', message: 'Invalid or expired QR code security token. Please re-scan the live QR code.' };
-    }
-
-    // 4. Role permission
-    if (event.permitted_roles !== 'All' && event.permitted_roles !== p.role) {
-      logAudit('REJECTED', 'CHECK_IN_ATTEMPT', { reason: 'Role not permitted', role: p.role, permitted: event.permitted_roles });
-      return { success: false, code: 'ROLE_NOT_PERMITTED', message: `This event is only open for ${event.permitted_roles} attendees.` };
-    }
-
-    // 5. Member verification
-    const members = mockDb.get('members');
-    const divisions = mockDb.get('divisions');
-    const branches = mockDb.get('branches');
-
-    const cleanInputPhone = String(p.phoneNumber).replace(/\D/g, '');
-
-    const member = members.find((m) => {
-      const codeMatch = m.member_code.trim().toUpperCase() === String(p.memberCode).trim().toUpperCase();
-      const roleMatch = m.role === p.role;
-      const divMatch = m.division_id === p.divisionId;
-      const branchMatch = m.branch_id === p.branchId;
-      return codeMatch && roleMatch && divMatch && branchMatch;
-    });
-
-    if (!member) {
-      logAudit('REJECTED', 'CHECK_IN_ATTEMPT', { reason: 'Member profile mismatch', role: p.role, code: p.memberCode });
-      return { success: false, code: 'MEMBER_NOT_FOUND', message: 'No matching record found. Please verify your Role, Code, Division, and Branch.' };
-    }
-
-    // Verify phone number (last 10 digits match)
-    const memberCleanPhone = String(member.phone_number).replace(/\D/g, '');
-    if (memberCleanPhone.slice(-10) !== cleanInputPhone.slice(-10)) {
-      logAudit('REJECTED', 'CHECK_IN_ATTEMPT', { reason: 'Phone mismatch' });
-      return { success: false, code: 'PHONE_MISMATCH', message: 'Mobile number does not match the registered record for this employee/agent code.' };
-    }
-
-    // 6. Active member status
-    if (!member.is_active) {
-      logAudit('REJECTED', 'CHECK_IN_ATTEMPT', { reason: 'Member account deactivated' });
-      return { success: false, code: 'ACCOUNT_INACTIVE', message: 'Your account is currently inactive. Please contact your system administrator.' };
-    }
-
-    // 7. Duplicate Check (Every employee can mark attendance only once per permitted session)
     const attendanceRecords = mockDb.get('attendance');
-    const existing = attendanceRecords.find((a) => a.event_id === event.id && a.member_id === member.id);
-    if (existing) {
-      logAudit('REJECTED', 'CHECK_IN_ATTEMPT', { reason: 'Duplicate attendance' });
-      const checkInDate = new Date(existing.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const roleNote = existing.check_in_mode === 'HOST_SELF' ? 'as an authorized host' : 'as an attendee';
-      return {
-        success: false,
-        code: 'DUPLICATE_ATTENDANCE',
-        message: `Attendance was already recorded ${roleNote} for ${member.full_name} at ${checkInDate}. Duplicate submissions are strictly prohibited.`
-      };
+    if (attendanceRecords.some((a) => a.event_id === eventId && a.member_id === memberId)) {
+      return { success: false, code: 'ALREADY_PRESENT', message: 'This person is already marked present for the event.' };
     }
 
-    // 8. Event Date & Time Window Validation
-    const now = new Date();
-    const todayStr = getTodayISODate();
-    if (event.date !== todayStr) {
-      logAudit('REJECTED', 'CHECK_IN_ATTEMPT', { reason: 'Date mismatch', eventDate: event.date, today: todayStr });
-      return { success: false, code: 'EVENT_DATE_MISMATCH', message: `This event is scheduled for ${event.date}. Check-in is not open today.` };
-    }
-
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
-    const [startH, startM] = event.start_time.split(':').map(Number);
-    const [endH, endM] = event.end_time.split(':').map(Number);
-    const startMinutes = startH * 60 + startM;
-    const endMinutes = endH * 60 + endM;
-
-    if (currentMinutes < startMinutes) {
-      logAudit('REJECTED', 'CHECK_IN_ATTEMPT', { reason: 'Check-in window not started' });
-      return { success: false, code: 'TIME_WINDOW_EARLY', message: `Check-in has not started yet. Opens at ${event.start_time}.` };
-    }
-
-    if (currentMinutes > endMinutes) {
-      logAudit('REJECTED', 'CHECK_IN_ATTEMPT', { reason: 'Check-in window closed' });
-      return { success: false, code: 'TIME_WINDOW_CLOSED', message: `Check-in window closed at ${event.end_time}.` };
-    }
-
-    // 9. Location & Strict 50-metre Geofence Radius Verification (Haversine calculation)
-    let distance = null;
-    const allowedRadius = event.radius_meters || 50;
-
-    if (event.location_required) {
-      if (p.latitude === undefined || p.latitude === null || p.longitude === undefined || p.longitude === null) {
-        logAudit('REJECTED', 'CHECK_IN_ATTEMPT', { reason: 'GPS coordinates missing' });
-        return { success: false, code: 'GPS_REQUIRED', message: 'Venue GPS location verification is required. Please grant location access.' };
-      }
-
-      if (event.latitude && event.longitude) {
-        distance = calculateDistanceMeters(p.latitude, p.longitude, event.latitude, event.longitude);
-        if (distance > allowedRadius) {
-          logAudit('REJECTED', 'CHECK_IN_ATTEMPT', { reason: 'Outside radius', distance, radius: allowedRadius });
-          return {
-            success: false,
-            code: 'OUTSIDE_GEOFENCE',
-            message: `Geofence check failed: You are ${Math.round(distance)} meters away from the venue. Strict permitted radius is ${allowedRadius} meters.`
-          };
-        }
-      }
-    }
-
-    // 10. Record Attendance Atomically with Distinct Attribution
-    const divObj = divisions.find((d) => d.id === member.division_id);
-    const branchObj = branches.find((b) => b.id === member.branch_id);
-    const ticketId = crypto.randomUUID();
-    const checkInTime = new Date().toISOString();
-
-    const newAttendance = {
-      id: ticketId,
+    const now = new Date().toISOString();
+    const record = {
+      id: crypto.randomUUID(),
       event_id: event.id,
       event_name: event.name,
+      venue: event.venue,
       member_id: member.id,
       member_code: member.member_code,
       full_name: member.full_name,
       role: member.role,
       phone_number: member.phone_number,
       division_id: member.division_id,
-      division_name: divObj ? divObj.name : 'Unknown',
+      division_name: member.division_name,
       branch_id: member.branch_id,
-      branch_name: branchObj ? branchObj.name : 'Unknown',
+      branch_name: member.branch_name,
+      check_in_time: now,
+      distance_meters: null,
+      is_late: false,
+      check_out_time: null,
+      verification_status: 'MANUAL',
+      verification_notes: String(reason).trim(),
+      check_in_mode: 'ADMIN_MANUAL',
+      created_at: now
+    };
+    attendanceRecords.unshift(record);
+    mockDb.save('attendance', attendanceRecords);
+    await this.logAudit('SUCCESS', 'ADMIN_MANUAL_ATTENDANCE', { eventId, memberId, reason: record.verification_notes });
+    broadcastNewAttendance(record);
+    return this.mockReceipt(record, 'CHECK_IN', false);
+  },
+
+  async mockRedeemHostScan({ eventId, hostCode, windowEpoch, signature }) {
+    const event = mockDb.get('events').find((e) => e.id === eventId);
+    if (!event || !event.is_active) {
+      return { success: false, code: 'EVENT_INACTIVE', message: 'This event is not accepting check-ins.' };
+    }
+    const code = String(hostCode || '').trim().toUpperCase();
+    const host = mockDb.get('event_hosts').find(
+      (h) => h.event_id === eventId && h.is_active && String(h.member_code).trim().toUpperCase() === code
+    );
+    if (!host) {
+      return { success: false, code: 'HOST_NOT_AUTHORIZED', message: 'This QR code does not belong to an authorized attendance taker for this event.' };
+    }
+    const verify = await verifyDynamicQrToken(eventId, hostCode, host.host_secret, windowEpoch, signature);
+    if (!verify.valid) {
+      return { success: false, code: verify.code, message: verify.message };
+    }
+
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const tickets = mockDb.get('scan_tickets').filter((t) => new Date(t.expires_at) > new Date(Date.now() - 86400000));
+    const ticket = {
+      id: crypto.randomUUID(),
+      event_id: eventId,
+      host_member_id: host.member_id,
+      window_epoch: Number(windowEpoch),
+      expires_at: expiresAt,
+      used_at: null,
+      used_by_member_id: null
+    };
+    tickets.push(ticket);
+    mockDb.save('scan_tickets', tickets);
+
+    return {
+      success: true,
+      ticket: ticket.id,
+      expires_at: expiresAt,
+      host_name: host.full_name,
+      host_member_code: host.member_code,
+      host_station: host.station_name
+    };
+  },
+
+  // Replica of submit_attendance in supabase/schema.sql for demo mode
+  async mockSubmitAttendanceRPC(p) {
+    const now = new Date();
+    const retryWindowMs = 2 * 60 * 1000;
+    const action = String(p.action || 'CHECK_IN').toUpperCase();
+    const mode = String(p.checkInMode || '').toUpperCase();
+    const event = mockDb.get('events').find((e) => e.id === p.eventId);
+    const auditLogs = mockDb.get('audit_logs');
+
+    const reject = (code, message, memberId = null, details = {}) => {
+      auditLogs.unshift({
+        id: crypto.randomUUID(),
+        event_id: event ? event.id : null,
+        member_id: memberId,
+        action: 'CHECK_IN_ATTEMPT',
+        status: 'REJECTED',
+        details: { ...details, code, reason: message },
+        user_agent: p.userAgent || navigator.userAgent,
+        created_at: now.toISOString()
+      });
+      mockDb.save('audit_logs', auditLogs);
+      return { success: false, code, message };
+    };
+
+    // 1. Event
+    if (!event) return reject('EVENT_NOT_FOUND', 'This event was not found. Scan the QR code on a staff member\'s phone again.');
+    if (!event.is_active) return reject('EVENT_INACTIVE', 'This event is not accepting check-ins.');
+    if (!['CHECK_IN', 'CHECK_OUT'].includes(action)) return reject('INVALID_ACTION', 'Unknown attendance action.');
+    if (action === 'CHECK_OUT' && !event.checkout_enabled) return reject('CHECKOUT_DISABLED', 'Check-out is not enabled for this event.');
+
+    // 2. Role
+    if (event.permitted_roles !== 'All' && event.permitted_roles !== p.role) {
+      return reject('ROLE_NOT_PERMITTED', `This event is only open for ${event.permitted_roles} attendees.`);
+    }
+
+    // 3. Member, mobile number and status
+    const members = await this.getMembers();
+    const member = members.find((m) =>
+      m.member_code.trim().toUpperCase() === String(p.memberCode).trim().toUpperCase() &&
+      m.role === p.role &&
+      m.division_id === p.divisionId &&
+      m.branch_id === p.branchId
+    );
+    if (!member) return reject('MEMBER_NOT_FOUND', 'No matching record found. Please verify your Role, Code, Division, and Branch.');
+
+    const cleanPhone = String(p.phoneNumber || '').replace(/\D/g, '');
+    if (cleanPhone.length < 10 || String(member.phone_number).replace(/\D/g, '').slice(-10) !== cleanPhone.slice(-10)) {
+      return reject('PHONE_MISMATCH', 'Mobile number does not match the registered record for this employee/agent code.', member.id);
+    }
+    if (!member.is_active) return reject('ACCOUNT_INACTIVE', 'Your account is currently inactive. Please contact the administrator.', member.id);
+
+    // 4. Proof of presence
+    const hosts = mockDb.get('event_hosts');
+    const tickets = mockDb.get('scan_tickets');
+    let host = null;
+    let ticket = null;
+    if (mode === 'ATTENDEE_SCAN') {
+      if (!p.scanTicket) return reject('SCAN_REQUIRED', 'Scan the QR code shown on a staff member\'s phone to check in.', member.id);
+      ticket = tickets.find((t) => t.id === p.scanTicket && t.event_id === event.id);
+      if (!ticket) return reject('INVALID_TICKET', 'Your scan could not be verified. Scan the staff member\'s QR code again.', member.id);
+      if (ticket.used_at && (ticket.used_by_member_id !== member.id || now - new Date(ticket.used_at) > retryWindowMs)) {
+        return reject('TICKET_USED', 'This scan was already used. Scan the live QR code on the staff member\'s phone yourself.', member.id);
+      }
+      if (!ticket.used_at && new Date(ticket.expires_at) < now) {
+        return reject('TICKET_EXPIRED', 'More than 10 minutes passed since you scanned. Scan the staff member\'s QR code again.', member.id);
+      }
+      host = hosts.find((h) => h.event_id === event.id && h.member_id === ticket.host_member_id) || null;
+    } else if (mode === 'HOST_SELF') {
+      host = hosts.find((h) => h.event_id === event.id && h.member_id === member.id && h.is_active && p.hostKey && h.host_secret === p.hostKey);
+      if (!host) return reject('HOST_NOT_AUTHORIZED', 'Host self check-in needs a valid beacon link for your own staff profile.', member.id);
+    } else {
+      return reject('SCAN_REQUIRED', 'Scan the QR code shown on a staff member\'s phone to check in.', member.id);
+    }
+
+    // 5. Date, time window, duplicates
+    if (event.date !== getTodayISODate()) {
+      return reject('EVENT_DATE_MISMATCH', `This event is scheduled for ${event.date}. Check-in is not open today.`, member.id);
+    }
+
+    const attendanceRecords = mockDb.get('attendance');
+    const existing = attendanceRecords.find((a) => a.event_id === event.id && a.member_id === member.id);
+    const toMinutes = (t) => {
+      const [h, m] = String(t).split(':').map(Number);
+      return h * 60 + m;
+    };
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    let isLate = false;
+
+    if (action === 'CHECK_IN') {
+      if (existing) {
+        // A repeated tap returns the same pass instead of an error
+        if (now - new Date(existing.check_in_time) < retryWindowMs) return this.mockReceipt(existing, 'CHECK_IN', true);
+        const at = new Date(existing.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return reject('DUPLICATE_ATTENDANCE', `Attendance was already recorded for ${member.full_name} at ${at}.`, member.id);
+      }
+      if (currentMinutes < toMinutes(event.start_time)) {
+        return reject('TIME_WINDOW_EARLY', `Check-in has not started yet. Opens at ${event.start_time.slice(0, 5)}.`, member.id);
+      }
+      if (currentMinutes > toMinutes(event.end_time)) {
+        return reject('TIME_WINDOW_CLOSED', `Check-in window closed at ${event.end_time.slice(0, 5)}.`, member.id);
+      }
+      isLate = currentMinutes > toMinutes(event.start_time) + (event.late_grace_minutes ?? 15);
+    } else {
+      if (!existing) {
+        return reject('NOT_CHECKED_IN', 'You have not checked in to this event yet, so there is nothing to check out from.', member.id);
+      }
+      if (existing.check_out_time) {
+        if (now - new Date(existing.check_out_time) < retryWindowMs) return this.mockReceipt(existing, 'CHECK_OUT', true);
+        const at = new Date(existing.check_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return reject('ALREADY_CHECKED_OUT', `You already checked out at ${at}.`, member.id);
+      }
+    }
+
+    // 6. Accuracy-aware geofence
+    const geo = evaluateGeofence(event, p);
+    if (!geo.ok) return reject(geo.code, geo.message, member.id, { distance: geo.distance, accuracy: p.accuracy });
+    const status = geo.flags.length > 0 ? 'FLAGGED' : 'VERIFIED';
+
+    const markTicketUsed = () => {
+      if (ticket && !ticket.used_at) {
+        ticket.used_at = now.toISOString();
+        ticket.used_by_member_id = member.id;
+        mockDb.save('scan_tickets', tickets);
+      }
+    };
+    const logSuccess = (auditAction, details) => {
+      auditLogs.unshift({
+        id: crypto.randomUUID(),
+        event_id: event.id,
+        member_id: member.id,
+        action: auditAction,
+        status: status === 'FLAGGED' ? 'FLAGGED' : 'SUCCESS',
+        details,
+        user_agent: p.userAgent || navigator.userAgent,
+        created_at: now.toISOString()
+      });
+      mockDb.save('audit_logs', auditLogs);
+    };
+
+    // 7A. Check-out
+    if (action === 'CHECK_OUT') {
+      existing.check_out_time = now.toISOString();
+      existing.check_out_distance_meters = geo.distance;
+      if (geo.flags.length > 0) {
+        existing.verification_notes = [existing.verification_notes, `Check-out: ${geo.flags.join('; ')}`].filter(Boolean).join('; ');
+      }
+      mockDb.save('attendance', attendanceRecords);
+      markTicketUsed();
+      logSuccess('CHECK_OUT_SUCCESS', { attendance_id: existing.id, distance_meters: geo.distance, flags: geo.flags });
+      broadcastNewAttendance(existing);
+      return this.mockReceipt(existing, 'CHECK_OUT', false);
+    }
+
+    // 7B. Check-in
+    const checkInTime = now.toISOString();
+    const newAttendance = {
+      id: crypto.randomUUID(),
+      event_id: event.id,
+      event_name: event.name,
+      venue: event.venue,
+      member_id: member.id,
+      member_code: member.member_code,
+      full_name: member.full_name,
+      role: member.role,
+      phone_number: member.phone_number,
+      division_id: member.division_id,
+      division_name: member.division_name,
+      branch_id: member.branch_id,
+      branch_name: member.branch_name,
       check_in_time: checkInTime,
-      latitude: p.latitude || null,
-      longitude: p.longitude || null,
-      distance_meters: distance,
-      verification_status: 'VERIFIED',
-      check_in_mode: checkInMode,
+      latitude: p.latitude ?? null,
+      longitude: p.longitude ?? null,
+      accuracy_meters: p.accuracy ?? null,
+      distance_meters: geo.distance,
+      is_late: isLate,
+      check_out_time: null,
+      verification_status: status,
+      verification_notes: geo.flags.join('; ') || null,
+      check_in_mode: mode,
       host_member_id: host ? host.member_id : null,
       host_member_code: host ? host.member_code : null,
       host_name: host ? host.full_name : null,
       host_station: host ? host.station_name : null,
-      qr_window_epoch: p.windowEpoch || null,
+      qr_window_epoch: ticket ? ticket.window_epoch : null,
       created_at: checkInTime
     };
 
     attendanceRecords.unshift(newAttendance);
     mockDb.save('attendance', attendanceRecords);
-
-    // Trigger local cross-tab storage event & live subscribers
-    try {
-      localStorage.setItem('attendpro_last_attendance_event', JSON.stringify({ time: Date.now(), record: newAttendance }));
-    } catch (e) {}
+    markTicketUsed();
+    logSuccess('CHECK_IN_SUCCESS', {
+      attendance_id: newAttendance.id,
+      check_in_mode: mode,
+      host_code: host ? host.member_code : null,
+      distance_meters: geo.distance,
+      accuracy: p.accuracy ?? null,
+      is_late: isLate,
+      flags: geo.flags
+    });
     broadcastNewAttendance(newAttendance);
 
-    // 11. Audit log
-    logAudit('SUCCESS', 'CHECK_IN_SUCCESS', {
-      attendance_id: ticketId,
-      member_name: member.full_name,
-      check_in_mode: checkInMode,
-      host_code: host ? host.member_code : null,
-      distance_meters: distance
-    });
+    return this.mockReceipt(newAttendance, 'CHECK_IN', false);
+  },
 
-    const verifiedByText = checkInMode === 'HOST_SELF'
-      ? 'Self Check-In (Authorized Host)'
-      : (host ? `Beacon Host: ${host.full_name} (${host.member_code})` : 'Venue Official QR');
+  // Same shape as attendance_receipt() in supabase/schema.sql
+  mockReceipt(record, action, alreadyRecorded) {
+    const fmt = (iso) => (iso ? new Date(iso).toLocaleString([], {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    }) : null);
+    const distance = action === 'CHECK_OUT' ? record.check_out_distance_meters : record.distance_meters;
 
     return {
       success: true,
-      message: checkInMode === 'HOST_SELF' 
-        ? 'Host self-attendance verified and recorded successfully!' 
-        : 'Attendance verified and recorded successfully via live host beacon!',
+      already_recorded: alreadyRecorded,
+      message: action === 'CHECK_OUT' ? 'Check-out recorded successfully!' : 'Attendance verified and recorded successfully!',
       data: {
-        ticket_id: ticketId,
-        full_name: member.full_name,
-        member_code: member.member_code,
-        role: member.role,
-        division: divObj ? divObj.name : '',
-        branch: branchObj ? branchObj.name : '',
-        event_name: event.name,
-        venue: event.venue,
-        check_in_mode: checkInMode,
-        verified_by: verifiedByText,
-        check_in_time: new Date(checkInTime).toLocaleString([], {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit'
-        }),
-        distance_meters: distance !== null ? Math.round(distance) : null
+        ticket_id: record.id,
+        action,
+        full_name: record.full_name,
+        member_code: record.member_code,
+        role: record.role,
+        division: record.division_name || '',
+        branch: record.branch_name || '',
+        event_name: record.event_name,
+        venue: record.venue || '',
+        check_in_mode: record.check_in_mode,
+        host_name: record.host_name || null,
+        host_member_code: record.host_member_code || null,
+        host_station: record.host_station || null,
+        check_in_time: fmt(record.check_in_time),
+        check_out_time: fmt(record.check_out_time),
+        is_late: Boolean(record.is_late),
+        verification_status: record.verification_status || 'VERIFIED',
+        distance_meters: distance === null || distance === undefined ? null : Math.round(distance)
       }
     };
   },
@@ -1181,26 +1347,11 @@ export const dbService = {
         const branchMap = new Map((branches || []).map((b) => [b.id, b.name]));
 
         const buildAttendanceQuery = () => {
-          let q = supabase.from('attendance').select(`
-            id,
-            event_id,
-            member_id,
-            check_in_time,
-            latitude,
-            longitude,
-            distance_meters,
-            verification_status,
-            check_in_mode,
-            host_member_id,
-            host_member_code,
-            host_name,
-            events (id, name, venue, date),
-            members:members!attendance_member_id_fkey (
-              id, role, member_code, full_name, phone_number, division_id, branch_id
-            )
-          `).order('check_in_time', { ascending: false });
+          let q = supabase.from('attendance').select(ATTENDANCE_SELECT).order('check_in_time', { ascending: false });
 
           if (filters.eventId) q = q.eq('event_id', filters.eventId);
+          // Incremental refresh: only rows checked in or checked out after the given time
+          if (filters.since) q = q.or(`check_in_time.gt.${filters.since},check_out_time.gt.${filters.since}`);
           return q;
         };
 
@@ -1210,68 +1361,40 @@ export const dbService = {
 
         while (true) {
           const { data, error } = await buildAttendanceQuery().range(from, from + pageSize - 1);
-          if (error) {
-            console.warn('Supabase getAttendanceRecords failed:', error);
-            break;
-          }
+          if (error) throw liveError('load attendance records', error);
           if (!data || data.length === 0) break;
           allRecords.push(...data);
           if (data.length < pageSize) break;
           from += pageSize;
         }
 
-        if (allRecords.length > 0) {
-          // Normalize structure with enriched division and branch names
-          let normalized = allRecords.map((row) => {
-            const mem = row.members || {};
-            return {
-              id: row.id,
-              event_id: row.events?.id || row.event_id,
-              event_name: row.events?.name || 'Event',
-              venue: row.events?.venue || '',
-              member_id: mem.id || row.member_id,
-              member_code: mem.member_code || '',
-              full_name: mem.full_name || 'Attendee',
-              role: mem.role || 'Staff',
-              phone_number: mem.phone_number || '',
-              division_id: mem.division_id || '',
-              division_name: divMap.get(mem.division_id) || 'Division',
-              branch_id: mem.branch_id || '',
-              branch_name: branchMap.get(mem.branch_id) || 'Branch',
-              check_in_time: row.check_in_time,
-              distance_meters: row.distance_meters,
-              verification_status: row.verification_status,
-              check_in_mode: row.check_in_mode || 'ATTENDEE_SCAN',
-              host_member_id: row.host_member_id || null,
-              host_member_code: row.host_member_code || null,
-              host_name: row.host_name || null
-            };
-          });
+        // Normalize structure with enriched division and branch names
+        let normalized = allRecords.map((row) => normalizeAttendanceRow(row, divMap, branchMap));
 
-          // Apply filters in JS for role, division, branch, date, mode
-          if (filters.role && filters.role !== 'All') {
-            normalized = normalized.filter((r) => r.role === filters.role);
-          }
-          if (filters.divisionId && filters.divisionId !== 'All') {
-            normalized = normalized.filter((r) => r.division_id === filters.divisionId);
-          }
-          if (filters.branchId && filters.branchId !== 'All') {
-            normalized = normalized.filter((r) => r.branch_id === filters.branchId);
-          }
-          if (filters.date) {
-            normalized = normalized.filter((r) => r.check_in_time && r.check_in_time.startsWith(filters.date));
-          }
-          if (filters.checkInMode && filters.checkInMode !== 'All') {
-            normalized = normalized.filter((r) => r.check_in_mode === filters.checkInMode);
-          }
-
-          return normalized;
+        // Apply filters in JS for role, division, branch, date, mode
+        if (filters.role && filters.role !== 'All') {
+          normalized = normalized.filter((r) => r.role === filters.role);
         }
+        if (filters.divisionId && filters.divisionId !== 'All') {
+          normalized = normalized.filter((r) => r.division_id === filters.divisionId);
+        }
+        if (filters.branchId && filters.branchId !== 'All') {
+          normalized = normalized.filter((r) => r.branch_id === filters.branchId);
+        }
+        if (filters.date) {
+          normalized = normalized.filter((r) => r.check_in_time && r.check_in_time.startsWith(filters.date));
+        }
+        if (filters.hostCode && filters.hostCode !== 'All') {
+          normalized = normalized.filter((r) => r.host_member_code === filters.hostCode);
+        }
+        if (filters.checkInMode && filters.checkInMode !== 'All') {
+          normalized = normalized.filter((r) => r.check_in_mode === filters.checkInMode);
+        }
+
+        return normalized;
       } catch (e) {
-        console.warn('Supabase getAttendanceRecords failed:', e);
-      }
-      if (this.isUsingSupabase()) {
-        return [];
+        console.error('Supabase getAttendanceRecords failed:', e);
+        throw e;
       }
     }
 
@@ -1297,6 +1420,9 @@ export const dbService = {
     if (filters.checkInMode && filters.checkInMode !== 'All') {
       records = records.filter((r) => r.check_in_mode === filters.checkInMode);
     }
+    if (filters.since) {
+      records = records.filter((r) => r.check_in_time > filters.since || (r.check_out_time && r.check_out_time > filters.since));
+    }
     return records;
   },
 
@@ -1314,24 +1440,7 @@ export const dbService = {
 
         const { data, error } = await supabase
           .from('attendance')
-          .select(`
-            id,
-            event_id,
-            member_id,
-            check_in_time,
-            latitude,
-            longitude,
-            distance_meters,
-            verification_status,
-            check_in_mode,
-            host_member_id,
-            host_member_code,
-            host_name,
-            events (id, name, venue, date),
-            members:members!attendance_member_id_fkey (
-              id, role, member_code, full_name, phone_number, division_id, branch_id
-            )
-          `)
+          .select(ATTENDANCE_SELECT)
           .eq('id', id)
           .maybeSingle();
 
@@ -1339,35 +1448,11 @@ export const dbService = {
           console.warn('getAttendanceRecordById Supabase error:', error);
           return null;
         }
-        if (data) {
-          const mem = data.members || {};
-          return {
-            id: data.id,
-            event_id: data.events?.id || data.event_id,
-            event_name: data.events?.name || 'Event',
-            venue: data.events?.venue || '',
-            member_id: mem.id || data.member_id,
-            member_code: mem.member_code || '',
-            full_name: mem.full_name || 'Attendee',
-            role: mem.role || 'Staff',
-            phone_number: mem.phone_number || '',
-            division_id: mem.division_id || '',
-            division_name: divMap.get(mem.division_id) || 'Division',
-            branch_id: mem.branch_id || '',
-            branch_name: branchMap.get(mem.branch_id) || 'Branch',
-            check_in_time: data.check_in_time,
-            distance_meters: data.distance_meters,
-            verification_status: data.verification_status,
-            check_in_mode: data.check_in_mode || 'ATTENDEE_SCAN',
-            host_member_id: data.host_member_id || null,
-            host_member_code: data.host_member_code || null,
-            host_name: data.host_name || null
-          };
-        }
+        return data ? normalizeAttendanceRow(data, divMap, branchMap) : null;
       } catch (err) {
         console.warn('getAttendanceRecordById error:', err);
+        return null;
       }
-      if (this.isUsingSupabase()) return null;
     }
     const local = mockDb.get('attendance') || [];
     return local.find((r) => r.id === id) || null;
@@ -1377,33 +1462,56 @@ export const dbService = {
   async getEventAuthorizedHosts(eventId) {
     const supabase = getSupabaseClient();
     if (supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('event_authorized_hosts')
-          .select('*, members (id, member_code, full_name, role, phone_number, division_id, branch_id)')
-          .eq('event_id', eventId);
-        if (!error && data) {
-          return data.map((row) => ({
-            id: row.id,
-            event_id: row.event_id,
-            member_id: row.member_id,
-            member_code: row.members?.member_code || row.member_code,
-            full_name: row.members?.full_name || row.full_name,
-            station_name: row.station_name || 'Main Entrance',
-            host_secret: row.host_secret || DEFAULT_HOST_SECRET_SALT,
-            is_active: row.is_active ?? true,
-            device_id: row.device_id || null,
-            device_registered_at: row.device_registered_at || null
-          }));
-        }
-      } catch (err) {}
+      // RPC: anon cannot read members directly, so host names come from a SECURITY DEFINER function
+      const { data, error } = await supabase.rpc('get_event_hosts', { p_event_id: eventId });
+      if (error) throw liveError('load event hosts', error);
+      return (data || []).map((row) => ({
+        id: row.id,
+        event_id: row.event_id,
+        member_id: row.member_id,
+        member_code: row.member_code,
+        full_name: row.full_name,
+        role: row.role,
+        division_id: row.division_id,
+        branch_id: row.branch_id,
+        station_name: row.station_name || 'Main Entrance',
+        is_active: row.is_active ?? true,
+        device_id: row.device_id || null,
+        device_registered_at: row.device_registered_at || null
+      }));
     }
     const hosts = mockDb.get('event_hosts') || [];
-    return hosts.filter((h) => h.event_id === eventId).map((h) => ({
-      ...h,
-      device_id: h.device_id || null,
-      device_registered_at: h.device_registered_at || null
-    }));
+    const members = mockDb.get('members');
+    // Mirrors get_event_hosts: never expose host_secret on public pages
+    return hosts.filter((h) => h.event_id === eventId).map(({ host_secret, ...h }) => {
+      const m = members.find((mem) => mem.id === h.member_id) || {};
+      return {
+        ...h,
+        role: m.role,
+        division_id: m.division_id,
+        branch_id: m.branch_id,
+        device_id: h.device_id || null,
+        device_registered_at: h.device_registered_at || null
+      };
+    });
+  },
+
+  /**
+   * Admin only: beacon keys per host member, used to build each host's private beacon link
+   * @returns {Promise<Map<string, string>>} member_id -> host_secret
+   */
+  async getEventHostKeys(eventId) {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('event_authorized_hosts')
+        .select('member_id, host_secret')
+        .eq('event_id', eventId);
+      if (error) throw liveError('load beacon links', error);
+      return new Map((data || []).map((row) => [row.member_id, row.host_secret]));
+    }
+    const hosts = (mockDb.get('event_hosts') || []).filter((h) => h.event_id === eventId);
+    return new Map(hosts.map((h) => [h.member_id, h.host_secret]));
   },
 
   async getAuthorizedHostByCode(eventId, hostCode) {
@@ -1413,14 +1521,33 @@ export const dbService = {
     return hosts.find((h) => h.member_code && String(h.member_code).trim().toUpperCase() === codeStr && h.is_active) || null;
   },
 
-  async claimHostDeviceLock(eventId, hostCode, clientDeviceId) {
+  /**
+   * Binds the beacon to this phone on first use; later opens must come from the same phone.
+   * The beacon key from the host's private link proves who is opening it.
+   */
+  async claimHostDeviceLock(eventId, hostCode, hostKey, clientDeviceId) {
     if (!eventId || !hostCode || !clientDeviceId) {
       return { success: false, error: 'INVALID_PARAMS', message: 'Missing event ID, host code, or device ID.' };
     }
 
-    const host = await this.getAuthorizedHostByCode(eventId, hostCode);
-    if (!host) {
-      return { success: false, error: 'NOT_FOUND', message: 'Authorized host not found for this event.' };
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { data, error } = await supabase.rpc('host_claim_device', {
+        p_event_id: eventId,
+        p_host_code: hostCode,
+        p_host_key: hostKey || null,
+        p_device_id: clientDeviceId
+      });
+      if (error) throw liveError('verify this beacon', error);
+      return { success: data.success, isNewLock: Boolean(data.is_new_lock), error: data.error, message: data.message };
+    }
+
+    const codeStr = String(hostCode).trim().toUpperCase();
+    const host = (mockDb.get('event_hosts') || []).find(
+      (h) => h.event_id === eventId && h.is_active && String(h.member_code).trim().toUpperCase() === codeStr
+    );
+    if (!host || !hostKey || host.host_secret !== hostKey) {
+      return { success: false, error: 'INVALID_KEY', message: 'This beacon link is not valid. Ask your administrator for a new link.' };
     }
 
     // 1. If host has no device locked yet -> Bind this device!
@@ -1462,6 +1589,38 @@ export const dbService = {
     };
   },
 
+  /**
+   * Host's own attendance status and how many attendees checked in through this beacon
+   */
+  async getHostStats(eventId, hostCode, hostKey) {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { data, error } = await supabase.rpc('host_stats', {
+        p_event_id: eventId,
+        p_host_code: hostCode,
+        p_host_key: hostKey || null
+      });
+      if (error) throw liveError('load beacon stats', error);
+      return data;
+    }
+
+    const codeStr = String(hostCode).trim().toUpperCase();
+    const host = (mockDb.get('event_hosts') || []).find(
+      (h) => h.event_id === eventId && String(h.member_code).trim().toUpperCase() === codeStr
+    );
+    if (!host || host.host_secret !== hostKey) return { success: false, message: 'Invalid beacon key.' };
+    const records = mockDb.get('attendance').filter((a) => a.event_id === eventId);
+    const self = records.find((a) => a.member_id === host.member_id);
+    return {
+      success: true,
+      self_checked_in: Boolean(self),
+      self_check_in_time: self?.check_in_time || null,
+      self_check_in_mode: self?.check_in_mode || null,
+      self_distance_meters: self?.distance_meters ?? null,
+      scanned_count: records.filter((a) => a.host_member_id === host.member_id && a.check_in_mode === 'ATTENDEE_SCAN').length
+    };
+  },
+
   async resetHostDeviceLock(eventId, memberId) {
     if (!eventId || !memberId) return false;
     await this.updateHostDevice(eventId, memberId, null, null);
@@ -1475,7 +1634,20 @@ export const dbService = {
   },
 
   async updateHostDevice(eventId, memberId, deviceId, registeredAt = null) {
-    // 1. Update Mock DB
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { error } = await supabase
+        .from('event_authorized_hosts')
+        .update({
+          device_id: deviceId,
+          device_registered_at: registeredAt || (deviceId ? new Date().toISOString() : null)
+        })
+        .eq('event_id', eventId)
+        .eq('member_id', memberId);
+      if (error) console.warn('Supabase updateHostDevice error:', error);
+      return !error;
+    }
+
     const hosts = mockDb.get('event_hosts') || [];
     const updated = hosts.map((h) => {
       if (h.event_id === eventId && h.member_id === memberId) {
@@ -1488,31 +1660,16 @@ export const dbService = {
       return h;
     });
     mockDb.save('event_hosts', updated);
-
-    // 2. Update Supabase if connected
-    const supabase = getSupabaseClient();
-    if (supabase) {
-      try {
-        await supabase
-          .from('event_authorized_hosts')
-          .update({
-            device_id: deviceId,
-            device_registered_at: registeredAt || (deviceId ? new Date().toISOString() : null)
-          })
-          .eq('event_id', eventId)
-          .eq('member_id', memberId);
-      } catch (err) {
-        console.warn('Supabase updateHostDevice error:', err);
-      }
-    }
     return true;
   },
 
   async authorizeEventHosts(eventId, hostSelections) {
     const supabase = getSupabaseClient();
-    const existing = mockDb.get('event_hosts') || [];
+    const existing = supabase ? [] : (mockDb.get('event_hosts') || []);
     const otherEvents = existing.filter((h) => h.event_id !== eventId);
-    const currentEventHosts = existing.filter((h) => h.event_id === eventId);
+    const currentEventHosts = supabase
+      ? await this.getEventAuthorizedHosts(eventId)
+      : existing.filter((h) => h.event_id === eventId);
     const existingHostMap = new Map(currentEventHosts.map((h) => [h.member_id, h]));
 
     const members = await this.getMembers();
@@ -1522,8 +1679,8 @@ export const dbService = {
       const member = memberMap.get(sel.memberId);
       const code = sel.memberCode || member?.member_code || `STF-${idx + 1}`;
       const name = sel.fullName || member?.full_name || 'Staff Member';
-      const cleanCode = String(code).toLowerCase().replace(/[^a-z0-9]/g, '');
       const prevHost = existingHostMap.get(sel.memberId);
+      const randomSecret = Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
 
       return {
         id: sel.id || prevHost?.id || crypto.randomUUID(),
@@ -1532,7 +1689,7 @@ export const dbService = {
         member_code: code,
         full_name: name,
         station_name: sel.stationName || prevHost?.station_name || `Beacon Station #${idx + 1}`,
-        host_secret: sel.hostSecret || prevHost?.host_secret || `sec_${cleanCode || 'host'}_${Date.now().toString(36)}`,
+        host_secret: prevHost?.host_secret || randomSecret,
         is_active: sel.isActive !== undefined ? sel.isActive : true,
         device_id: prevHost?.device_id || null,
         device_registered_at: prevHost?.device_registered_at || null,
@@ -1540,47 +1697,36 @@ export const dbService = {
       };
     });
 
-    mockDb.save('event_hosts', [...otherEvents, ...newHosts]);
+    if (!supabase) {
+      mockDb.save('event_hosts', [...otherEvents, ...newHosts]);
+    }
 
     if (supabase) {
-      try {
-        const { error: delError } = await supabase.from('event_authorized_hosts').delete().eq('event_id', eventId);
-        if (delError) console.warn('Supabase delete event_authorized_hosts warning:', delError);
+      // Upsert keeps each existing host's host_secret (and so their beacon link) and device lock;
+      // new hosts get a fresh secret from the column default.
+      if (newHosts.length > 0) {
+        const upsertPayload = newHosts.map((h) => ({
+          event_id: h.event_id,
+          member_id: h.member_id,
+          station_name: h.station_name,
+          is_active: h.is_active,
+          updated_at: new Date().toISOString()
+        }));
+        const { error: upsertError } = await supabase
+          .from('event_authorized_hosts')
+          .upsert(upsertPayload, { onConflict: 'event_id,member_id' });
+        if (upsertError) throw liveError('save event hosts', upsertError);
+      }
 
-        if (newHosts.length > 0) {
-          const insertPayload = newHosts.map((h) => ({
-            event_id: h.event_id,
-            member_id: h.member_id,
-            station_name: h.station_name,
-            is_active: h.is_active,
-            device_id: h.device_id,
-            device_registered_at: h.device_registered_at
-          }));
-          let { error: insError } = await supabase.from('event_authorized_hosts').insert(insertPayload);
-
-          // Graceful fallback if device_id column has not been added to Supabase yet
-          if (insError && (insError.message?.includes('device_id') || insError.details?.includes('device_id') || insError.code === 'PGRST204')) {
-            console.warn('device_id column not detected in Supabase event_authorized_hosts. Retrying without device columns...');
-            const fallbackPayload = newHosts.map((h) => ({
-              event_id: h.event_id,
-              member_id: h.member_id,
-              station_name: h.station_name,
-              is_active: h.is_active
-            }));
-            const retryRes = await supabase.from('event_authorized_hosts').insert(fallbackPayload);
-            insError = retryRes.error;
-          }
-
-          if (insError) {
-            console.error('Supabase authorizeEventHosts insert error:', insError);
-            throw new Error(insError.message || 'Failed to save hosts in Supabase');
-          }
-        }
-      } catch (e) {
-        console.error('Supabase authorizeEventHosts error:', e);
-        if (this.isUsingSupabase()) {
-          throw e;
-        }
+      const keepIds = new Set(newHosts.map((h) => h.member_id));
+      const removedIds = currentEventHosts.map((h) => h.member_id).filter((id) => !keepIds.has(id));
+      if (removedIds.length > 0) {
+        const { error: delError } = await supabase
+          .from('event_authorized_hosts')
+          .delete()
+          .eq('event_id', eventId)
+          .in('member_id', removedIds);
+        if (delError) throw liveError('remove event hosts', delError);
       }
     }
 
@@ -1589,23 +1735,38 @@ export const dbService = {
 
   async removeEventHost(eventId, memberId) {
     const supabase = getSupabaseClient();
+    if (supabase) {
+      const { error } = await supabase
+        .from('event_authorized_hosts')
+        .delete()
+        .eq('event_id', eventId)
+        .eq('member_id', memberId);
+      if (error) throw liveError('remove the host', error);
+      return true;
+    }
+
     let hosts = mockDb.get('event_hosts') || [];
     hosts = hosts.filter((h) => !(h.event_id === eventId && h.member_id === memberId));
     mockDb.save('event_hosts', hosts);
-
-    if (supabase) {
-      try {
-        await supabase
-          .from('event_authorized_hosts')
-          .delete()
-          .eq('event_id', eventId)
-          .eq('member_id', memberId);
-      } catch (e) {}
-    }
     return true;
   },
 
   // 5. MASTER MEMBERS MANAGEMENT
+  /**
+   * Public roster for the check-in dropdowns: id, name and code only (no phone numbers)
+   */
+  async getBranchMembersForCheckin(branchId, role) {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { data, error } = await supabase.rpc('list_branch_members', { p_branch_id: branchId, p_role: role });
+      if (error) throw liveError('load the member list', error);
+      return data || [];
+    }
+
+    const members = await this.getMembers({ branchId, role, isActive: true });
+    return members.map(({ id, full_name, member_code }) => ({ id, full_name, member_code }));
+  },
+
   async getMembers(filters = {}) {
     const supabase = getSupabaseClient();
     if (supabase) {
@@ -1650,8 +1811,7 @@ export const dbService = {
               from = 0;
               continue;
             }
-            console.error('[Supabase] Member query error:', error);
-            break;
+            throw liveError('load members', error);
           }
 
           if (!data || data.length === 0) break;
@@ -1696,10 +1856,9 @@ export const dbService = {
         }
       } catch (e) {
         console.error('Supabase getMembers error:', e);
+        throw e;
       }
-      if (this.isUsingSupabase()) {
-        return [];
-      }
+      return [];
     }
 
     let members = mockDb.get('members');
@@ -1746,8 +1905,16 @@ export const dbService = {
     };
 
     const supabase = getSupabaseClient();
+    let oldMember = null;
     if (supabase) {
       if (isEdit) {
+        const { data: oldRow } = await supabase
+          .from('members')
+          .select('division_id, branch_id')
+          .eq('id', id)
+          .maybeSingle();
+        oldMember = oldRow;
+
         const updatePayload = {
           role: entry.role,
           member_code: entry.member_code,
@@ -1770,20 +1937,19 @@ export const dbService = {
           throw new Error('Database insert failed: ' + error.message);
         }
       }
-    }
-
-    const members = mockDb.get('members');
-    let oldMember = null;
-    if (isEdit) {
-      const idx = members.findIndex((m) => m.id === id);
-      if (idx !== -1) {
-        oldMember = { ...members[idx] };
-        members[idx] = { ...members[idx], ...entry };
-      }
     } else {
-      members.unshift({ ...entry, created_at: new Date().toISOString() });
+      const members = mockDb.get('members');
+      if (isEdit) {
+        const idx = members.findIndex((m) => m.id === id);
+        if (idx !== -1) {
+          oldMember = { ...members[idx] };
+          members[idx] = { ...members[idx], ...entry };
+        }
+      } else {
+        members.unshift({ ...entry, created_at: new Date().toISOString() });
+      }
+      mockDb.save('members', members);
     }
-    mockDb.save('members', members);
 
     // If an existing member was transferred to a different branch or division, write an audit log
     if (isEdit && oldMember && (oldMember.branch_id !== entry.branch_id || oldMember.division_id !== entry.division_id)) {
@@ -1794,35 +1960,12 @@ export const dbService = {
         const fromLoc = `${divMap.get(oldMember.division_id) || 'Unknown'} - ${brMap.get(oldMember.branch_id) || 'Unknown'}`;
         const toLoc = `${divMap.get(entry.division_id) || 'Unknown'} - ${brMap.get(entry.branch_id) || 'Unknown'}`;
 
-        const auditLogs = mockDb.get('audit_logs');
-        auditLogs.unshift({
-          id: crypto.randomUUID(),
-          action: 'BRANCH_TRANSFER',
-          status: 'SUCCESS',
-          details: {
-            member_code: entry.member_code,
-            full_name: entry.full_name,
-            from: fromLoc,
-            to: toLoc
-          },
-          user_agent: navigator.userAgent,
-          created_at: new Date().toISOString()
+        await this.logAudit('SUCCESS', 'BRANCH_TRANSFER', {
+          member_code: entry.member_code,
+          full_name: entry.full_name,
+          from: fromLoc,
+          to: toLoc
         });
-        mockDb.save('audit_logs', auditLogs);
-
-        if (supabase) {
-          await supabase.from('audit_logs').insert([{
-            action: 'BRANCH_TRANSFER',
-            status: 'SUCCESS',
-            details: {
-              member_code: entry.member_code,
-              full_name: entry.full_name,
-              from: fromLoc,
-              to: toLoc
-            },
-            user_agent: navigator.userAgent
-          }]);
-        }
       } catch (auditErr) {
         console.warn('Branch transfer audit log write error:', auditErr);
       }
@@ -1833,6 +1976,19 @@ export const dbService = {
 
   async toggleMemberStatus(memberId) {
     const supabase = getSupabaseClient();
+    if (supabase) {
+      const { data: current, error: readError } = await supabase
+        .from('members')
+        .select('is_active')
+        .eq('id', memberId)
+        .single();
+      if (readError) throw liveError('read the member status', readError);
+      const nextStatus = !current.is_active;
+      const { error } = await supabase.from('members').update({ is_active: nextStatus }).eq('id', memberId);
+      if (error) throw liveError('change the member status', error);
+      return nextStatus;
+    }
+
     const members = mockDb.get('members');
     const idx = members.findIndex((m) => m.id === memberId);
     let newStatus = true;
@@ -1841,17 +1997,15 @@ export const dbService = {
       members[idx].is_active = newStatus;
       mockDb.save('members', members);
     }
-
-    if (supabase) {
-      await supabase.from('members').update({ is_active: newStatus }).eq('id', memberId);
-    }
     return newStatus;
   },
 
   async deleteMember(memberId) {
     const supabase = getSupabaseClient();
     if (supabase) {
-      await supabase.from('members').delete().eq('id', memberId);
+      const { error } = await supabase.from('members').delete().eq('id', memberId);
+      if (error) throw liveError('delete the member', error);
+      return true;
     }
     let members = mockDb.get('members');
     members = members.filter((m) => m.id !== memberId);
@@ -1861,9 +2015,11 @@ export const dbService = {
 
   async bulkImportMembers(rows) {
     const supabase = getSupabaseClient();
-    const existingDivisions = mockDb.get('divisions');
-    const existingBranches = mockDb.get('branches');
-    let members = mockDb.get('members');
+    // Deduplicate against the real database in live mode, not the browser's demo copy
+    const [existingDivisions, existingBranches, existingMembers] = supabase
+      ? await Promise.all([this.getDivisions(), this.getBranches(), this.getMembers()])
+      : [mockDb.get('divisions'), mockDb.get('branches'), mockDb.get('members')];
+    let members = existingMembers;
 
     const existingCodes = new Set(members.map((m) => String(m.member_code).trim().toUpperCase()));
     const existingDivisionNames = new Map(existingDivisions.map((d) => [d.name.trim().toLowerCase(), d]));
@@ -1938,50 +2094,39 @@ export const dbService = {
       imported.push(newMember);
     }
 
-    if (newDivisions.length > 0) {
-      mockDb.save('divisions', existingDivisions);
-    }
-    if (newBranches.length > 0) {
-      mockDb.save('branches', existingBranches);
-    }
-    if (imported.length > 0) {
-      members = [...imported, ...members];
-      mockDb.save('members', members);
-    }
-
-    // Supabase sync if connected
     if (supabase) {
-      try {
-        if (newDivisions.length > 0) {
-          await supabase.from('divisions').insert(newDivisions);
-        }
-        if (newBranches.length > 0) {
-          await supabase.from('branches').insert(newBranches);
-        }
-        if (imported.length > 0) {
-          await supabase.from('members').insert(imported);
-        }
-      } catch (err) {
-        console.warn('Supabase bulkImport error:', err);
+      if (newDivisions.length > 0) {
+        const { error } = await supabase.from('divisions').insert(newDivisions);
+        if (error) throw liveError('import divisions', error);
+      }
+      if (newBranches.length > 0) {
+        const { error } = await supabase.from('branches').insert(newBranches);
+        if (error) throw liveError('import branches', error);
+      }
+      if (imported.length > 0) {
+        const { error } = await supabase.from('members').insert(imported);
+        if (error) throw liveError('import members', error);
+      }
+      invalidateLookupCache();
+    } else {
+      if (newDivisions.length > 0) {
+        mockDb.save('divisions', existingDivisions);
+      }
+      if (newBranches.length > 0) {
+        mockDb.save('branches', existingBranches);
+      }
+      if (imported.length > 0) {
+        members = [...imported, ...members];
+        mockDb.save('members', members);
       }
     }
 
-    // Audit Log
-    const auditLogs = mockDb.get('audit_logs');
-    auditLogs.unshift({
-      id: crypto.randomUUID(),
-      action: 'BULK_MEMBER_IMPORT',
-      status: 'SUCCESS',
-      details: {
-        totalRows: rows.length,
-        importedCount: imported.length,
-        skippedCount: skipped,
-        errorCount: errors.length
-      },
-      user_agent: navigator.userAgent,
-      created_at: new Date().toISOString()
+    await this.logAudit('SUCCESS', 'BULK_MEMBER_IMPORT', {
+      totalRows: rows.length,
+      importedCount: imported.length,
+      skippedCount: skipped,
+      errorCount: errors.length
     });
-    mockDb.save('audit_logs', auditLogs);
 
     return {
       success: true,
@@ -1997,133 +2142,91 @@ export const dbService = {
     const supabase = getSupabaseClient();
     if (supabase) {
       const { data, error } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(limit);
-      if (!error && data) return data;
+      if (error) throw liveError('load audit logs', error);
+      return data || [];
     }
     return mockDb.get('audit_logs').slice(0, limit);
   },
 
-  // 7. REAL-TIME LIVE SUBSCRIPTION
-  async getAttendanceRecordById(id) {
+  /**
+   * Best-effort audit entry. In live mode only admins can write audit_logs, so writes
+   * from public pages (e.g. the host beacon) are skipped by RLS without breaking the flow.
+   */
+  async logAudit(status, action, details = {}) {
+    const entry = {
+      event_id: details.eventId || null,
+      member_id: details.memberId || null,
+      action,
+      status,
+      details,
+      user_agent: navigator.userAgent
+    };
+
     const supabase = getSupabaseClient();
     if (supabase) {
       try {
-        const [divs, branches] = await Promise.all([
-          this.getDivisions(),
-          this.getBranches()
-        ]);
-        const divMap = new Map((divs || []).map((d) => [d.id, d.name]));
-        const branchMap = new Map((branches || []).map((b) => [b.id, b.name]));
-
-        const { data, error } = await supabase.from('attendance').select(`
-          id,
-          event_id,
-          member_id,
-          check_in_time,
-          latitude,
-          longitude,
-          distance_meters,
-          verification_status,
-          check_in_mode,
-          host_member_id,
-          host_member_code,
-          host_name,
-          events (id, name, venue, date),
-          members:members!attendance_member_id_fkey (
-            id, role, member_code, full_name, phone_number, division_id, branch_id
-          )
-        `).eq('id', id).single();
-
-        if (!error && data) {
-          const mem = data.members || {};
-          return {
-            id: data.id,
-            event_id: data.events?.id || data.event_id,
-            event_name: data.events?.name || 'Event',
-            venue: data.events?.venue || '',
-            member_id: mem.id || data.member_id,
-            member_code: mem.member_code || '',
-            full_name: mem.full_name || 'Attendee',
-            role: mem.role || 'Staff',
-            phone_number: mem.phone_number || '',
-            division_id: mem.division_id || '',
-            division_name: divMap.get(mem.division_id) || 'Division',
-            branch_id: mem.branch_id || '',
-            branch_name: branchMap.get(mem.branch_id) || 'Branch',
-            check_in_time: data.check_in_time,
-            distance_meters: data.distance_meters,
-            verification_status: data.verification_status,
-            check_in_mode: data.check_in_mode || 'ATTENDEE_SCAN',
-            host_member_id: data.host_member_id || null,
-            host_member_code: data.host_member_code || null,
-            host_name: data.host_name || null
-          };
-        }
-      } catch (e) {
-        console.warn('getAttendanceRecordById error:', e);
+        const { error } = await supabase.from('audit_logs').insert([entry]);
+        if (error) console.warn(`Audit log "${action}" not written:`, error.message);
+      } catch (err) {
+        console.warn(`Audit log "${action}" not written:`, err);
       }
+      return;
     }
-    const records = mockDb.get('attendance');
-    return records.find((r) => r.id === id) || null;
+
+    const auditLogs = mockDb.get('audit_logs');
+    auditLogs.unshift({ id: crypto.randomUUID(), ...entry, created_at: new Date().toISOString() });
+    mockDb.save('audit_logs', auditLogs);
   },
 
+  // 7. REAL-TIME LIVE SUBSCRIPTION
   /**
-   * Subscribe to new real-time attendance events (Supabase Realtime + local BroadcastChannel)
+   * Subscribe to attendance inserts and updates (check-outs, manual edits).
+   * Live mode: Supabase Realtime. Demo mode: in-page subscribers plus BroadcastChannel across tabs.
+   * @param {(record: object) => void} callback receives the full, normalized attendance record
+   * @param {{onStatus?: (status: 'live'|'offline') => void}} options
+   * @returns {() => void} unsubscribe
    */
-  subscribeToAttendance(callback) {
-    attendanceSubscribers.add(callback);
+  subscribeToAttendance(callback, { onStatus } = {}) {
+    const supabase = getSupabaseClient();
 
-    if (realtimeBroadcast) {
-      realtimeBroadcast.onmessage = (event) => {
-        if (event.data?.type === 'NEW_ATTENDANCE' && event.data.record) {
-          callback(event.data.record);
-        }
+    if (!supabase) {
+      attendanceSubscribers.add(callback);
+      const onBroadcast = (event) => {
+        if (event.data?.type === 'NEW_ATTENDANCE' && event.data.record) callback(event.data.record);
+      };
+      realtimeBroadcast?.addEventListener('message', onBroadcast);
+      onStatus?.('live');
+      return () => {
+        attendanceSubscribers.delete(callback);
+        realtimeBroadcast?.removeEventListener('message', onBroadcast);
       };
     }
 
-    const storageListener = (e) => {
-      if (e.key === 'attendpro_last_attendance_event' && e.newValue) {
-        try {
-          const payload = JSON.parse(e.newValue);
-          if (payload?.record) callback(payload.record);
-        } catch (err) {}
+    const handleChange = async (payload) => {
+      try {
+        const enriched = await this.getAttendanceRecordById(payload.new?.id);
+        if (enriched) callback(enriched);
+      } catch (e) {
+        console.warn('Realtime attendance enrichment error:', e);
       }
     };
-    window.addEventListener('storage', storageListener);
 
-    // Supabase Realtime channel subscription
-    const supabase = getSupabaseClient();
-    let supabaseChannel = null;
-    if (supabase) {
-      try {
-        supabaseChannel = supabase
-          .channel('attendance_live_stream')
-          .on(
-            'postgres_changes',
-            { event: 'INSERT', schema: 'public', table: 'attendance' },
-            async (payload) => {
-              try {
-                const enriched = (await this.getAttendanceRecordById(payload.new?.id)) || payload.new;
-                callback(enriched);
-              } catch (e) {
-                console.warn('Realtime attendance enrichment error:', e);
-                callback(payload.new);
-              }
-            }
-          )
-          .subscribe((status) => {
-            console.log('Supabase Realtime attendance channel status:', status);
-          });
-      } catch (err) {
-        console.warn('Supabase Realtime subscription error:', err);
-      }
+    let channel = null;
+    try {
+      channel = supabase
+        .channel(`attendance_live_stream_${crypto.randomUUID()}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'attendance' }, handleChange)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'attendance' }, handleChange)
+        .subscribe((status) => {
+          onStatus?.(status === 'SUBSCRIBED' ? 'live' : 'offline');
+        });
+    } catch (err) {
+      console.warn('Supabase Realtime subscription error:', err);
+      onStatus?.('offline');
     }
 
     return () => {
-      attendanceSubscribers.delete(callback);
-      window.removeEventListener('storage', storageListener);
-      if (supabase && supabaseChannel) {
-        supabase.removeChannel(supabaseChannel);
-      }
+      if (channel) supabase.removeChannel(channel);
     };
   },
 
@@ -2131,6 +2234,9 @@ export const dbService = {
    * Simulates an instant verified check-in for real-time demo & testing
    */
   async simulateRandomCheckIn(targetEventId = null) {
+    if (getSupabaseClient()) {
+      return { success: false, message: 'Simulated check-ins are only available in demo mode.' };
+    }
     const events = await this.getEvents({ isActive: true });
     if (events.length === 0) {
       return { success: false, message: 'No active events found.' };
@@ -2203,10 +2309,6 @@ export const dbService = {
       created_at: now.toISOString()
     });
     mockDb.save('audit_logs', auditLogs);
-
-    try {
-      localStorage.setItem('attendpro_last_attendance_event', JSON.stringify({ time: Date.now(), record }));
-    } catch (e) {}
 
     broadcastNewAttendance(record);
 

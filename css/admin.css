@@ -1140,6 +1140,27 @@
   animation: rowLiveGlow 3s ease-out forwards;
 }
 
+/* Present / Pending switch on the Live Attendance tab */
+.attendance-view-toggle {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.attendance-view-toggle .btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #ffffff;
+}
+
+.attendance-view-toggle .btn.active .badge {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+.live-status-pill.is-polling .pulse-indicator {
+  background: #f59e0b;
+}
+
 /* ==========================================================================
    VISUAL ANALYTICS & INTELLIGENCE STYLES
    ========================================================================== */
@@ -1659,15 +1680,6 @@
   font-size: 0.8125rem;
   color: #64748b;
   margin-top: 18px;
-}
-
-.auth-footer-note {
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-subtle);
-  font-size: 0.72rem;
-  color: #94a3b8;
-  text-align: center;
 }
 
 /* User Pill & Sign Out */

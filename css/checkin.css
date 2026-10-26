@@ -92,19 +92,6 @@
   color: #0f172a;
 }
 
-.topbar-admin-link {
-  font-size: 0.8125rem;
-  color: #64748b;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  transition: color var(--transition-fast);
-}
-
-.topbar-admin-link:hover {
-  color: #0f172a;
-}
-
 /* ==========================================================================
    Main Check-in Card (Responsive Adaptor)
    ========================================================================== */
@@ -131,40 +118,6 @@
     opacity: 1;
     transform: translateY(0) scale(1);
   }
-}
-
-/* Forced Phone Simulator View (Triggered on Desktop via toggle button) */
-.mobile-viewport.force-mobile-view .mobile-card {
-  max-width: 420px !important;
-  border: 10px solid #1e293b !important;
-  border-radius: 40px !important;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 0 2px #334155 !important;
-  margin: 16px auto !important;
-}
-
-.mobile-viewport.force-mobile-view #checkinFormContainer {
-  display: block !important;
-}
-
-.mobile-viewport.force-mobile-view .portal-header {
-  border-right: none !important;
-}
-
-.mobile-viewport.force-mobile-view .portal-sidebar-notes {
-  display: none !important;
-}
-
-.mobile-viewport.force-mobile-view .form-row-2col {
-  grid-template-columns: 1fr !important;
-  gap: 0 !important;
-}
-
-.mobile-viewport.force-mobile-view .pass-ticket {
-  display: block !important;
-}
-
-.mobile-viewport.force-mobile-view .ticket-divider {
-  display: block !important;
 }
 
 /* ==========================================================================
@@ -644,18 +597,6 @@
   flex: 1;
 }
 
-/* Security footer badge */
-.security-footer {
-  text-align: center;
-  font-size: 0.75rem;
-  color: #94a3b8;
-  margin-top: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-
 /* ==========================================================================
    RESPONSIVE ADJUSTMENTS FOR LAPTOPS, TABLETS & MOBILE PHONES
    ========================================================================== */
@@ -805,8 +746,6 @@
 
   .checkin-topbar,
   .pass-actions-row,
-  .security-footer,
-  #btnToggleDeviceView,
   .view-toggle-btn {
     display: none !important;
   }
@@ -900,6 +839,94 @@
   margin-top: 4px;
   font-size: 0.78rem;
   color: #64748b;
+}
+
+/* Searchable person field */
+.person-combobox {
+  position: relative;
+}
+
+.person-results {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 264px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: var(--radius-md, 10px);
+  box-shadow: 0 12px 28px -8px rgba(15, 23, 42, 0.25);
+}
+
+.person-results li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #0f172a;
+}
+
+.person-results li[aria-selected="true"],
+.person-results li:hover {
+  background: var(--primary-light);
+}
+
+.person-results li.person-results-empty {
+  cursor: default;
+  color: #64748b;
+  background: none;
+}
+
+.person-result-code {
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: #475569;
+  flex-shrink: 0;
+}
+
+.person-selected {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #a7f3d0;
+  background: #ecfdf5;
+  border-radius: var(--radius-md, 10px);
+}
+
+.person-selected-check {
+  color: #059669;
+  font-weight: 800;
+}
+
+.person-selected-text {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  color: #064e3b;
+  overflow-wrap: anywhere;
+}
+
+.person-change-btn {
+  background: none;
+  border: 0;
+  color: var(--primary);
+  font-weight: 700;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+
+.person-change-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  border-radius: 6px;
 }
 
 .btn-refresh-gps {

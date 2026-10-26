@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Host QR Beacon | Quick Access AttendPro</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Attendance Taker QR | Quick Access AttendPro</title>
   <meta name="description" content="Authorized Staff Mobile QR Beacon Portal with dynamic, continuously rotating QR codes and host self-attendance tracking." />
   <link rel="icon" type="image/png" href="/assets/logo.png" />
   <link rel="apple-touch-icon" href="/assets/icon-192.png" />
@@ -21,7 +21,7 @@
       <img src="/assets/logo.png" alt="AttendPro Logo" class="brand-logo-img sm" />
       <div>
         <div class="host-brand-title">Quick Access AttendPro</div>
-        <div class="host-brand-sub">MOBILE QR BEACON</div>
+        <div class="host-brand-sub">ATTENDANCE TAKER</div>
       </div>
     </div>
     <div class="host-wake-pill" id="wakeLockStatus" title="Keeps mobile screen from dimming">
@@ -33,26 +33,22 @@
   <main class="host-main">
     <!-- 1. Selection Card (Shown if not pre-selected by URL) -->
     <section class="host-selector-panel" id="hostSelectorCard">
-      <h2 class="host-selector-title">Select Beacon Station &amp; Host</h2>
-      <p class="host-selector-desc">Select the active event and your staff profile to launch your dynamic QR code.</p>
+      <h2 class="host-selector-title">Open Your Attendance QR</h2>
 
-      <div class="form-group">
-        <label class="form-label" for="selectBeaconEvent">Attendance Event <span class="required">*</span></label>
-        <select id="selectBeaconEvent" class="form-control form-select">
-          <option value="">Loading events...</option>
-        </select>
+      <!-- Shown when this phone has opened one or more personal links before -->
+      <div id="storedBeaconPicker" class="is-hidden">
+        <p class="host-selector-desc">Pick the event you are taking attendance for on this phone.</p>
+        <div class="form-group">
+          <label class="form-label" for="selectStoredBeacon">Your attendance QR <span class="required">*</span></label>
+          <select id="selectStoredBeacon" class="form-control form-select"></select>
+        </div>
+        <button type="button" class="btn btn-primary btn-block" id="btnLaunchBeacon" style="margin-top: 18px;">
+          Show My Attendance QR
+        </button>
       </div>
 
-      <div class="form-group" style="margin-top: 14px;">
-        <label class="form-label" for="selectBeaconHost">Authorized Staff Member <span class="required">*</span></label>
-        <select id="selectBeaconHost" class="form-control form-select" disabled>
-          <option value="">Select Event First</option>
-        </select>
-      </div>
-
-      <button type="button" class="btn btn-primary btn-block" id="btnLaunchBeacon" style="margin-top: 18px;" disabled>
-        ⚡ Launch Rotating QR Beacon
-      </button>
+      <!-- Shown when this phone has no stored personal link for an active event -->
+      <p class="host-selector-desc" id="noStoredBeaconMsg">Loading...</p>
     </section>
 
     <!-- 1B. Device Lock Alert Card (Shown if link is locked to another phone) -->
@@ -67,7 +63,7 @@
 
       <div class="device-lock-info-box">
         <div class="device-lock-row">
-          <span class="device-lock-label">Authorized Staff:</span>
+          <span class="device-lock-label">Attendance Taker:</span>
           <span class="device-lock-val" id="lockedHostName">-</span>
         </div>
         <div class="device-lock-row">
@@ -86,7 +82,7 @@
       </div>
 
       <button type="button" class="btn btn-primary btn-block" id="btnRetryDeviceLock" style="margin-top: 16px;">
-        🔄 Check Again &amp; Unlock Beacon
+        🔄 Check Again
       </button>
     </section>
 
@@ -108,11 +104,11 @@
     <section class="host-metrics-bar is-hidden" id="hostMetricsBar">
       <div class="host-metric-box">
         <div class="host-metric-val" id="beaconAttendeeCount">0</div>
-        <div class="host-metric-lbl">Scanned via this Beacon</div>
+        <div class="host-metric-lbl">Checked In via Your QR</div>
       </div>
-      <div class="host-metric-box">
-        <div class="host-metric-val" id="beaconWindowInterval">20s</div>
-        <div class="host-metric-lbl">Rotation Interval</div>
+      <div class="host-metric-box" id="windowStatusBox">
+        <div class="host-metric-val" id="windowStatusValue">–</div>
+        <div class="host-metric-lbl" id="windowStatusLabel">Check-in window</div>
       </div>
     </section>
 
@@ -123,8 +119,13 @@
         <div class="qr-instruction-sub">Point phone camera to verify attendance</div>
       </div>
 
-      <div class="qr-canvas-wrapper">
+      <div class="qr-canvas-wrapper" id="qrCanvasWrapper">
         <canvas id="rotatingQrCanvas"></canvas>
+        <!-- Covers the QR while check-in is not open, so attendees are not rejected -->
+        <div class="qr-closed-overlay is-hidden" id="qrClosedOverlay" role="status">
+          <strong id="qrClosedTitle">Check-in not open</strong>
+          <span id="qrClosedText"></span>
+        </div>
       </div>
 
       <!-- Circular Countdown Timer -->
@@ -143,7 +144,7 @@
       </div>
 
       <div class="qr-security-badge">
-        <span>🛡️ Anti-Screenshot Guard &bull; Single-Use Window &bull; Strict 50m GPS</span>
+        <span id="qrSecurityBadgeText">Screenshots don't work &bull; Code changes every 20 seconds</span>
       </div>
     </section>
 
@@ -155,15 +156,27 @@
           <span class="host-self-icon">⭐</span>
           <div>
             <div class="host-self-title">Record Your Own Attendance</div>
-            <div style="font-size:0.75rem;color:#38bdf8;">Authorized Host Check-In</div>
+            <div style="font-size:0.75rem;color:#38bdf8;">Attendance taker check-in</div>
           </div>
         </div>
         <p class="host-self-desc">
-          As the authorized staff member displaying this QR beacon, mark your own verified attendance record for this session.
+          You are taking attendance for this event. Mark your own attendance here.
         </p>
+        <label class="host-self-phone-label" for="hostSelfPhone">Your registered mobile number <span class="required">*</span></label>
+        <input
+          type="tel"
+          id="hostSelfPhone"
+          class="host-self-phone"
+          inputmode="numeric"
+          autocomplete="tel-national"
+          placeholder="10-digit mobile number"
+          maxlength="15"
+          required
+          aria-required="true"
+        />
         <button type="button" class="btn-host-self-checkin" id="btnHostSelfCheckin">
           <span class="spinner spinner-hidden" id="hostSelfSpinner"></span>
-          <span>✓ Mark My Own Attendance as Host</span>
+          <span>✓ Mark My Own Attendance</span>
         </button>
       </div>
 
@@ -184,14 +197,6 @@
       <button type="button" class="btn btn-ghost btn-sm" id="btnSwitchHost" style="color: #94a3b8;">
         ↺ Change Host / Station
       </button>
-      &nbsp;&bull;&nbsp;
-      <a href="/admin.html" class="btn btn-ghost btn-sm" style="color: #94a3b8;">
-        💻 Admin Portal
-      </a>
-    </div>
-
-    <div class="host-footer-note">
-      Quick Access AttendPro &bull; Enterprise Cryptographic Rotating QR Engine
     </div>
   </main>
 

@@ -26,18 +26,9 @@
       </div>
     </div>
     <div class="checkin-topbar-actions">
-      <button type="button" class="view-toggle-btn" id="btnCheckinCameraScan" title="Scan QR Code with In-App Camera">
-        📷 <span class="btn-install-text">Scan QR</span>
+      <button type="button" class="view-toggle-btn" id="btnCheckinCameraScan" title="Scan a staff QR code with the camera">
+        <span aria-hidden="true">📷</span> <span class="btn-install-text">Scan QR</span>
       </button>
-      <button type="button" class="view-toggle-btn btn-install-app" id="btnCheckinInstallApp" title="Install as standalone desktop app on your computer">
-        💻 <span class="btn-install-text">Install App</span>
-      </button>
-      <button type="button" class="view-toggle-btn" id="btnToggleDeviceView" title="Toggle between Desktop and Phone views on computer">
-        <span id="viewToggleIcon">📱</span> <span id="viewToggleLabel">Phone View</span>
-      </button>
-      <a href="/admin.html" class="topbar-admin-link">
-        💻 Admin Portal &rarr;
-      </a>
     </div>
   </header>
 
@@ -45,7 +36,7 @@
     <!-- 1. LOADING STATE -->
     <div id="loadingState" class="loading-box">
       <div class="spinner spinner-primary loading-spinner"></div>
-      <div class="loading-title">Verifying Event QR Code...</div>
+      <div class="loading-title">Verifying QR Code...</div>
       <div class="loading-subtitle">Connecting to secure check-in portal</div>
     </div>
 
@@ -109,7 +100,7 @@
           <div class="scanned-beacon-badge is-hidden" id="scannedBeaconBanner">
             <span class="beacon-pulse-dot"></span>
             <div>
-              <div class="beacon-badge-title">Scanned via Authorized Host Beacon</div>
+              <div class="beacon-badge-title">Scanned from attendance taker's QR</div>
               <div class="beacon-badge-sub" id="scannedBeaconHostDetails">Alexander Wright (STF-1001) &bull; Gate 1</div>
             </div>
           </div>
@@ -119,6 +110,19 @@
       <!-- Check-in Form Body -->
       <div class="portal-body">
         <form id="userCheckinForm">
+          <!-- Step 0: Check in / Check out (shown only when the event has check-out enabled) -->
+          <div class="form-group form-group-mb16 is-hidden" id="actionToggleGroup">
+            <label class="form-label">What are you recording? <span class="required">*</span></label>
+            <div class="role-segmented-control">
+              <button type="button" class="role-option-btn active" id="actionBtnCheckIn">
+                <span>➡️</span> Check In
+              </button>
+              <button type="button" class="role-option-btn" id="actionBtnCheckOut">
+                <span>⬅️</span> Check Out
+              </button>
+            </div>
+          </div>
+
           <!-- Step 1: Role Selection -->
           <div class="form-group form-group-mb16">
             <label class="form-label">Select Your Role <span class="required">*</span></label>
@@ -149,54 +153,50 @@
             </div>
           </div>
 
-          <!-- Quick Search Filter for Large Branch Rosters -->
-          <div class="form-group form-group-mb16 is-hidden" id="memberSearchWrapper">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-              <label class="form-label label-no-margin" for="inputMemberSearch">🔍 Fast Name/Code Filter</label>
-              <span class="badge badge-neutral" id="memberSearchMatchCount" style="font-size:0.65rem;">All Members</span>
+          <!-- Step 3: One searchable person field (filtered by branch and role) -->
+          <div class="form-group form-group-mb16 person-picker">
+            <label class="form-label" for="inputPersonSearch" id="personLabel">Your Name or Employee Code <span class="required">*</span></label>
+            <div class="person-combobox" id="personCombobox">
+              <input
+                type="text"
+                id="inputPersonSearch"
+                class="form-control"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded="false"
+                aria-controls="personResults"
+                autocomplete="off"
+                placeholder="Select your branch first"
+                disabled
+              />
+              <ul id="personResults" class="person-results is-hidden" role="listbox" aria-labelledby="personLabel"></ul>
             </div>
-            <input
-              type="text"
-              id="inputMemberSearch"
-              class="form-control"
-              placeholder="Type to quickly filter your name or employee code..."
-              autocomplete="off"
-            />
+            <div class="person-selected is-hidden" id="personSelected">
+              <span class="person-selected-check" aria-hidden="true">✓</span>
+              <span id="personSelectedText" class="person-selected-text"></span>
+              <button type="button" class="person-change-btn" id="btnPersonChange">Change</button>
+            </div>
+            <small class="form-helper-note" id="personHelper">Pick your branch, then type part of your name or code.</small>
           </div>
 
-          <!-- Step 3: Member Name & Code Dropdowns (Filtered by Branch) -->
-          <div class="form-row-2col">
-            <div class="form-group">
-              <label class="form-label" for="selectMemberName">Select Your Name <span class="required">*</span></label>
-              <select id="selectMemberName" class="form-control form-select" title="Select your name" aria-label="Select your name" disabled required>
-                <option value="">-- Select Branch First --</option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" id="codeLabel" for="selectMemberCode">Select Employee Code <span class="required">*</span></label>
-              <select id="selectMemberCode" class="form-control form-select" title="Select employee or agent code" aria-label="Select employee or agent code" disabled required>
-                <option value="">-- Select Branch First --</option>
-              </select>
-            </div>
-          </div>
-
-          <!-- Step 4: Registered Mobile Number (Auto-filled upon selection) -->
+          <!-- Step 4: Registered Mobile Number (typed by the attendee as proof of identity) -->
           <div class="form-group form-group-mb16">
             <label class="form-label" for="inputPhoneNumber">Registered Mobile Number <span class="required">*</span></label>
             <input
               type="tel"
               id="inputPhoneNumber"
               class="form-control"
+              inputmode="numeric"
+              autocomplete="tel-national"
               placeholder="10-digit mobile number"
               title="Registered 10-digit mobile number"
               aria-label="Registered 10-digit mobile number"
-              pattern="[0-9]{10}"
+              pattern="[0-9+ \-]{10,15}"
               maxlength="15"
               required
             />
             <small class="form-helper-note">
-              Auto-filled when you select your name or code above.
+              Enter the mobile number registered with your employee or agent code.
             </small>
           </div>
 
@@ -210,7 +210,7 @@
               </div>
             </div>
             <button type="button" class="btn btn-ghost btn-sm btn-refresh-gps" id="btnRetryGps">
-              🔄 Refresh
+              <span aria-hidden="true">🔄</span> Retry GPS
             </button>
           </div>
 
@@ -220,7 +220,7 @@
               <span style="font-weight:700; color:#1e293b; display:inline-flex; align-items:center; gap:6px;">
                 <span>🗺️</span> Venue Geofence Radar
               </span>
-              <span class="map-status-pill inside" id="radarStatusPill">50m Perimeter</span>
+              <span class="map-status-pill inside" id="radarStatusPill"></span>
             </div>
             <div id="checkinRadarMap" class="geofence-map-container radar-mini"></div>
           </div>
@@ -231,13 +231,6 @@
               <span class="spinner spinner-hidden" id="submitBtnSpinner"></span>
               <span id="submitBtnText">Confirm &amp; Mark Attendance</span>
             </button>
-          </div>
-
-          <div class="security-footer">
-            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
-            </svg>
-            <span>Secured with Supabase RLS &bull; Anti-Spoofing &bull; Single-Checkin</span>
           </div>
         </form>
       </div>
@@ -254,9 +247,7 @@
           </div>
           <h2 id="passVerifiedTitle">Attendance Verified!</h2>
           <p id="passVerifiedSubtitle">Official Digital Receipt Recorded</p>
-          <div id="passOfflineBadge" class="badge badge-warning is-hidden" style="margin-top: 8px; font-size: 0.72rem;">
-            ⏳ Stashed Offline &bull; Will Sync When Connected
-          </div>
+          <div id="passStatusNote" class="badge badge-warning is-hidden" style="margin-top: 8px; font-size: 0.72rem;"></div>
         </div>
 
         <!-- Ticket cut divider -->
@@ -288,7 +279,7 @@
               <div class="pass-field-venue" id="passVenue">-</div>
             </div>
             <div class="pass-field">
-              <strong>Verified At</strong>
+              <strong>Time</strong>
               <span id="passTimestamp" class="pass-timestamp-text">-</span>
             </div>
             <div class="pass-field">
@@ -296,8 +287,8 @@
               <span id="passGpsDistance" class="pass-distance-text">-</span>
             </div>
             <div class="pass-field pass-field-full" id="passHostField">
-              <strong>Verification Mode &amp; Beacon Host</strong>
-              <span id="passVerifiedBy" style="color:var(--primary);font-weight:700;">Venue Official QR</span>
+              <strong>Verified By</strong>
+              <span id="passVerifiedBy" style="color:var(--primary);font-weight:700;"></span>
             </div>
           </div>
 
@@ -313,9 +304,6 @@
             <button type="button" class="btn btn-secondary" id="btnSharePassTicket" title="Share your verified attendance via WhatsApp or Apps">
               📲 Share Pass
             </button>
-            <button type="button" class="btn btn-ghost" id="btnPrintPassTicket" title="Print physical copy">
-              🖨️ Print
-            </button>
           </div>
         </div>
       </div>
@@ -329,7 +317,7 @@
         <div class="rejection-card-icon">
           ✕
         </div>
-        <h3 class="rejection-card-title">Check-In Rejected</h3>
+        <h3 class="rejection-card-title">Couldn't Record Your Attendance</h3>
         <p id="rejectionMessageText" class="rejection-card-msg">
           Validation failed.
         </p>

@@ -151,6 +151,109 @@ export function validateGpsFix(position) {
 }
 
 /**
+ * Geofence rules shared by the check-in page and the demo engine.
+ * They mirror submit_attendance in supabase/schema.sql, which makes the final decision.
+ */
+export const GEOFENCE_RULES = {
+  maxAccuracyMeters: 150, // fixes worse than this are rejected
+  maxToleranceMeters: 50, // at most this much of the reported accuracy is credited
+  maxFixAgeMs: 120000 // fixes older than 2 minutes are rejected
+};
+
+/**
+ * Accuracy-aware geofence decision.
+ * @param {{latitude:number, longitude:number, radius_meters:number, location_required:boolean}} event
+ * @param {{latitude?:number, longitude?:number, accuracy?:number, positionAgeMs?:number, gpsSuspicious?:boolean}} fix
+ * @returns {{ok:boolean, code?:string, message?:string, distance:number|null, flags:string[]}}
+ */
+export function evaluateGeofence(event, fix = {}) {
+  const flags = [];
+  const hasFix = fix.latitude !== undefined && fix.latitude !== null && fix.longitude !== undefined && fix.longitude !== null;
+  const hasVenue = event.latitude !== undefined && event.latitude !== null && event.latitude !== ''
+    && event.longitude !== undefined && event.longitude !== null && event.longitude !== '';
+  const distance = hasFix && hasVenue
+    ? calculateDistanceMeters(fix.latitude, fix.longitude, Number(event.latitude), Number(event.longitude))
+    : null;
+  const radius = Number(event.radius_meters) || 50;
+  const fail = (code, message) => ({ ok: false, code, message, distance, flags });
+
+  if (event.location_required) {
+    if (!hasVenue) {
+      return fail('VENUE_NOT_CONFIGURED', 'The venue location for this event has not been set. Please inform the event administrator.');
+    }
+    if (!hasFix) {
+      return fail('GPS_REQUIRED', 'Venue GPS location verification is required. Please enable location services.');
+    }
+    if (fix.accuracy === undefined || fix.accuracy === null || fix.accuracy > GEOFENCE_RULES.maxAccuracyMeters) {
+      const acc = fix.accuracy === undefined || fix.accuracy === null ? 'unknown' : Math.round(fix.accuracy);
+      return fail('GPS_INACCURATE', `Your location is only accurate to about ${acc} m. Turn on precise location, move near a window or outdoors, and try again.`);
+    }
+    if (fix.positionAgeMs !== undefined && fix.positionAgeMs !== null && fix.positionAgeMs > GEOFENCE_RULES.maxFixAgeMs) {
+      return fail('GPS_STALE', 'Your location reading is out of date. Tap "Retry GPS" and submit again.');
+    }
+
+    // Credit the phone's reported accuracy so genuine attendees indoors are not rejected
+    const tolerance = Math.min(Math.max(fix.accuracy, 0), GEOFENCE_RULES.maxToleranceMeters);
+    if (distance - tolerance > radius) {
+      return fail('OUTSIDE_GEOFENCE', `You are about ${Math.round(distance)} m from the venue. Check-in is allowed within ${radius} m.`);
+    }
+    if (distance > radius) {
+      flags.push(`Inside radius only within GPS accuracy (${Math.round(distance)} m away, accuracy ${Math.round(fix.accuracy)} m)`);
+    }
+  }
+
+  if (fix.gpsSuspicious) {
+    flags.push('Phone GPS looked simulated or cached');
+  }
+
+  return { ok: true, distance, flags };
+}
+
+/**
+ * Watches GPS for a few seconds and resolves with the most accurate fix.
+ * Phones often report a coarse Wi-Fi fix first and a precise satellite fix shortly after.
+ * @param {{durationMs?:number, targetAccuracy?:number}} options
+ */
+export function acquireBestPosition({ durationMs = 8000, targetAccuracy = 20 } = {}) {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Geolocation is not supported by your browser or device.'));
+      return;
+    }
+
+    let best = null;
+    let finished = false;
+    let watchId = null;
+    let timer = null;
+
+    const finish = (err) => {
+      if (finished) return;
+      finished = true;
+      if (timer) clearTimeout(timer);
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+      if (best) resolve(best);
+      else reject(err || new Error('Location request timed out. Please check your GPS signal and retry.'));
+    };
+
+    watchId = watchGpsPosition(
+      (pos) => {
+        if (!best || pos.accuracy < best.accuracy) best = pos;
+        if (pos.accuracy <= targetAccuracy) finish();
+      },
+      (error) => {
+        // Keep waiting for a fix unless permission is denied
+        if (error && error.code === error.PERMISSION_DENIED) {
+          finish(new Error('Location permission was denied. Please allow location access in your browser settings to verify event attendance.'));
+        }
+      },
+      { maximumAge: 0, timeout: durationMs }
+    );
+
+    timer = setTimeout(() => finish(), durationMs);
+  });
+}
+
+/**
  * Watch GPS position continuously for real-time geofence tracking
  * @param {Function} onPosition 
  * @param {Function} onError 
