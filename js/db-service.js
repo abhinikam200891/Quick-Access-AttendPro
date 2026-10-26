@@ -4,6 +4,7 @@
  */
 
 import { evaluateGeofence } from './haversine.js';
+import { clockLabel, getEventWindow, nowInZone } from './event-window.js';
 import { getSupabaseClient, getSupabaseConfig } from './supabase-config.js';
 import { verifyDynamicQrToken } from './dynamic-qr.js';
 
@@ -714,6 +715,26 @@ function invalidateLookupCache() {
   lookupCache.branches = null;
 }
 
+// Division and branch codes: use the admin's code, or derive one from the name
+function cleanLookupCode(code, prefix, name) {
+  const typed = String(code || '').trim().toUpperCase().replace(/\s+/g, '-');
+  if (typed) return typed.slice(0, 50);
+  const slug = String(name || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
+  return `${prefix}-${slug || 'NEW'}-${Math.floor(Math.random() * 9000 + 1000)}`;
+}
+
+function lookupWriteError(kind, error) {
+  if (error?.code === '23505') {
+    return new Error(kind === 'branch'
+      ? 'A branch with this code already exists in this division.'
+      : 'A division with this code already exists.');
+  }
+  if (error?.code === '23503') {
+    return new Error(`This ${kind} still has members linked to it. Move them first.`);
+  }
+  return liveError(`save the ${kind}`, error);
+}
+
 // DB SERVICE
 export const dbService = {
   // Check if live Supabase is active
@@ -1165,18 +1186,10 @@ export const dbService = {
       return reject('SCAN_REQUIRED', 'Scan the QR code shown on a staff member\'s phone to check in.', member.id);
     }
 
-    // 5. Date, time window, duplicates
-    if (event.date !== getTodayISODate()) {
-      return reject('EVENT_DATE_MISMATCH', `This event is scheduled for ${event.date}. Check-in is not open today.`, member.id);
-    }
-
+    // 5. Time window (may run past midnight), duplicates
     const attendanceRecords = mockDb.get('attendance');
     const existing = attendanceRecords.find((a) => a.event_id === event.id && a.member_id === member.id);
-    const toMinutes = (t) => {
-      const [h, m] = String(t).split(':').map(Number);
-      return h * 60 + m;
-    };
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const checkinWindow = getEventWindow(event, now);
     let isLate = false;
 
     if (action === 'CHECK_IN') {
@@ -1186,16 +1199,20 @@ export const dbService = {
         const at = new Date(existing.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         return reject('DUPLICATE_ATTENDANCE', `Attendance was already recorded for ${member.full_name} at ${at}.`, member.id);
       }
-      if (currentMinutes < toMinutes(event.start_time)) {
-        return reject('TIME_WINDOW_EARLY', `Check-in has not started yet. Opens at ${event.start_time.slice(0, 5)}.`, member.id);
+      if (checkinWindow.state === 'waiting') {
+        return reject('TIME_WINDOW_EARLY', `Check-in has not started yet. Opens at ${clockLabel(checkinWindow.start)} on ${event.date}.`, member.id);
       }
-      if (currentMinutes > toMinutes(event.end_time)) {
-        return reject('TIME_WINDOW_CLOSED', `Check-in window closed at ${event.end_time.slice(0, 5)}.`, member.id);
+      if (checkinWindow.state === 'closed') {
+        return reject('TIME_WINDOW_CLOSED', `Check-in closed at ${clockLabel(checkinWindow.end)} on ${checkinWindow.endDate}.`, member.id);
       }
-      isLate = currentMinutes > toMinutes(event.start_time) + (event.late_grace_minutes ?? 15);
+      isLate = checkinWindow.isLate;
     } else {
       if (!existing) {
         return reject('NOT_CHECKED_IN', 'You have not checked in to this event yet, so there is nothing to check out from.', member.id);
+      }
+      // Check-out is allowed until the end of the day the event ends
+      if (nowInZone(event.timezone || 'Asia/Kolkata', now).date > checkinWindow.endDate) {
+        return reject('CHECKOUT_CLOSED', 'Check-out for this event has closed.', member.id);
       }
       if (existing.check_out_time) {
         if (now - new Date(existing.check_out_time) < retryWindowMs) return this.mockReceipt(existing, 'CHECK_OUT', true);
@@ -1514,13 +1531,6 @@ export const dbService = {
     return new Map(hosts.map((h) => [h.member_id, h.host_secret]));
   },
 
-  async getAuthorizedHostByCode(eventId, hostCode) {
-    if (!hostCode) return null;
-    const hosts = await this.getEventAuthorizedHosts(eventId);
-    const codeStr = String(hostCode).trim().toUpperCase();
-    return hosts.find((h) => h.member_code && String(h.member_code).trim().toUpperCase() === codeStr && h.is_active) || null;
-  },
-
   /**
    * Binds the beacon to this phone on first use; later opens must come from the same phone.
    * The beacon key from the host's private link proves who is opening it.
@@ -1621,11 +1631,15 @@ export const dbService = {
     };
   },
 
+  /**
+   * @returns {Promise<boolean>} true only when the lock was actually cleared
+   */
   async resetHostDeviceLock(eventId, memberId) {
     if (!eventId || !memberId) return false;
-    await this.updateHostDevice(eventId, memberId, null, null);
+    const cleared = await this.updateHostDevice(eventId, memberId, null, null);
+    if (!cleared) return false;
 
-    this.logAudit('SUCCESS', 'HOST_DEVICE_RESET', {
+    await this.logAudit('SUCCESS', 'HOST_DEVICE_RESET', {
       eventId,
       memberId
     });
@@ -1733,22 +1747,153 @@ export const dbService = {
     return newHosts;
   },
 
-  async removeEventHost(eventId, memberId) {
+  /**
+   * Admin review of a check-in (usually a FLAGGED one).
+   * APPROVE marks it verified; REJECT removes it so the person can check in again properly.
+   */
+  async reviewAttendance(attendanceId, decision, note) {
     const supabase = getSupabaseClient();
     if (supabase) {
-      const { error } = await supabase
-        .from('event_authorized_hosts')
-        .delete()
-        .eq('event_id', eventId)
-        .eq('member_id', memberId);
-      if (error) throw liveError('remove the host', error);
+      const { data, error } = await supabase.rpc('admin_review_attendance', {
+        p_attendance_id: attendanceId,
+        p_decision: decision,
+        p_note: note
+      });
+      if (error) throw liveError('save the review', error);
+      return data;
+    }
+
+    const cleanNote = String(note || '').trim();
+    if (!cleanNote) return { success: false, code: 'NOTE_REQUIRED', message: 'Enter a note explaining the decision.' };
+    const records = mockDb.get('attendance');
+    const idx = records.findIndex((r) => r.id === attendanceId);
+    if (idx === -1) return { success: false, code: 'NOT_FOUND', message: 'This attendance record no longer exists.' };
+
+    const record = records[idx];
+    if (decision === 'APPROVE') {
+      record.verification_status = 'VERIFIED';
+      record.verification_notes = [record.verification_notes, `Approved by admin: ${cleanNote}`].filter(Boolean).join('; ');
+      broadcastNewAttendance(record);
+    } else {
+      records.splice(idx, 1);
+      broadcastNewAttendance({ id: attendanceId, _deleted: true });
+    }
+    mockDb.save('attendance', records);
+    await this.logAudit('SUCCESS', `ADMIN_REVIEW_${decision}`, { eventId: record.event_id, memberId: record.member_id, attendance_id: attendanceId, note: cleanNote });
+    return { success: true, decision };
+  },
+
+  // 4C. DIVISIONS & BRANCHES MANAGEMENT (admin)
+  async saveDivision({ id = null, code = '', name }) {
+    const entry = { code: cleanLookupCode(code, 'DIV', name), name: String(name || '').trim() };
+    if (!entry.name) throw new Error('Enter a division name.');
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const query = id
+        ? supabase.from('divisions').update(entry).eq('id', id)
+        : supabase.from('divisions').insert([entry]);
+      const { error } = await query;
+      if (error) throw lookupWriteError('division', error);
+      invalidateLookupCache();
       return true;
     }
 
-    let hosts = mockDb.get('event_hosts') || [];
-    hosts = hosts.filter((h) => !(h.event_id === eventId && h.member_id === memberId));
-    mockDb.save('event_hosts', hosts);
+    const divisions = mockDb.get('divisions');
+    if (divisions.some((d) => d.code === entry.code && d.id !== id)) throw new Error('A division with this code already exists.');
+    if (id) {
+      const idx = divisions.findIndex((d) => d.id === id);
+      if (idx !== -1) divisions[idx] = { ...divisions[idx], ...entry };
+    } else {
+      divisions.push({ id: crypto.randomUUID(), ...entry });
+    }
+    mockDb.save('divisions', divisions);
     return true;
+  },
+
+  async deleteDivision(id) {
+    // Members are linked with ON DELETE RESTRICT; check first so the admin gets a clear message
+    const memberCount = await this.countMembersIn('division_id', id);
+    if (memberCount > 0) {
+      throw new Error(`This division still has ${memberCount} member${memberCount === 1 ? '' : 's'}. Move them to another division first.`);
+    }
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      // Its branches are removed with it (ON DELETE CASCADE)
+      const { error } = await supabase.from('divisions').delete().eq('id', id);
+      if (error) throw lookupWriteError('division', error);
+      invalidateLookupCache();
+      return true;
+    }
+
+    mockDb.save('divisions', mockDb.get('divisions').filter((d) => d.id !== id));
+    mockDb.save('branches', mockDb.get('branches').filter((b) => b.division_id !== id));
+    return true;
+  },
+
+  async saveBranch({ id = null, divisionId, code = '', name }) {
+    const entry = { division_id: divisionId, code: cleanLookupCode(code, 'BR', name), name: String(name || '').trim() };
+    if (!entry.division_id) throw new Error('Choose the division this branch belongs to.');
+    if (!entry.name) throw new Error('Enter a branch name.');
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const query = id
+        ? supabase.from('branches').update(entry).eq('id', id)
+        : supabase.from('branches').insert([entry]);
+      const { error } = await query;
+      if (error) throw lookupWriteError('branch', error);
+      invalidateLookupCache();
+      return true;
+    }
+
+    const branches = mockDb.get('branches');
+    if (branches.some((b) => b.division_id === entry.division_id && b.code === entry.code && b.id !== id)) {
+      throw new Error('A branch with this code already exists in this division.');
+    }
+    if (id) {
+      const idx = branches.findIndex((b) => b.id === id);
+      if (idx !== -1) branches[idx] = { ...branches[idx], ...entry };
+    } else {
+      branches.push({ id: crypto.randomUUID(), ...entry });
+    }
+    mockDb.save('branches', branches);
+    return true;
+  },
+
+  async deleteBranch(id) {
+    const memberCount = await this.countMembersIn('branch_id', id);
+    if (memberCount > 0) {
+      throw new Error(`This branch still has ${memberCount} member${memberCount === 1 ? '' : 's'}. Move them to another branch first.`);
+    }
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { error } = await supabase.from('branches').delete().eq('id', id);
+      if (error) throw lookupWriteError('branch', error);
+      invalidateLookupCache();
+      return true;
+    }
+
+    mockDb.save('branches', mockDb.get('branches').filter((b) => b.id !== id));
+    return true;
+  },
+
+  /**
+   * Number of members (active or not) linked to a division or branch
+   */
+  async countMembersIn(column, id) {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { count, error } = await supabase
+        .from('members')
+        .select('id', { count: 'exact', head: true })
+        .eq(column, id);
+      if (error) throw liveError('count members', error);
+      return count || 0;
+    }
+    return mockDb.get('members').filter((m) => m[column] === id).length;
   },
 
   // 5. MASTER MEMBERS MANAGEMENT
@@ -2210,6 +2355,10 @@ export const dbService = {
         console.warn('Realtime attendance enrichment error:', e);
       }
     };
+    // Rejected reviews delete the record; REPLICA IDENTITY FULL makes payload.old carry its id
+    const handleDelete = (payload) => {
+      if (payload.old?.id) callback({ id: payload.old.id, _deleted: true });
+    };
 
     let channel = null;
     try {
@@ -2217,6 +2366,7 @@ export const dbService = {
         .channel(`attendance_live_stream_${crypto.randomUUID()}`)
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'attendance' }, handleChange)
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'attendance' }, handleChange)
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'attendance' }, handleDelete)
         .subscribe((status) => {
           onStatus?.(status === 'SUBSCRIBED' ? 'live' : 'offline');
         });
@@ -2227,95 +2377,6 @@ export const dbService = {
 
     return () => {
       if (channel) supabase.removeChannel(channel);
-    };
-  },
-
-  /**
-   * Simulates an instant verified check-in for real-time demo & testing
-   */
-  async simulateRandomCheckIn(targetEventId = null) {
-    if (getSupabaseClient()) {
-      return { success: false, message: 'Simulated check-ins are only available in demo mode.' };
-    }
-    const events = await this.getEvents({ isActive: true });
-    if (events.length === 0) {
-      return { success: false, message: 'No active events found.' };
-    }
-
-    const event = targetEventId ? (events.find((e) => e.id === targetEventId) || events[0]) : events[0];
-    const members = await this.getMembers({ isActive: true });
-    const attendance = await this.getAttendanceRecords({ eventId: event.id });
-    const attendedMemberIds = new Set(attendance.map((a) => a.member_id));
-
-    // Find candidate members eligible for this event who haven't checked in yet
-    const eligibleMembers = members.filter((m) => {
-      if (attendedMemberIds.has(m.id)) return false;
-      if (event.permitted_roles !== 'All' && m.role !== event.permitted_roles) return false;
-      return true;
-    });
-
-    if (eligibleMembers.length === 0) {
-      return { success: false, message: `All eligible members have already checked in for "${event.name}"!` };
-    }
-
-    // Pick a random eligible member
-    const member = eligibleMembers[Math.floor(Math.random() * eligibleMembers.length)];
-    const divisions = await this.getDivisions();
-    const branches = await this.getBranches();
-    const divObj = divisions.find((d) => d.id === member.division_id);
-    const branchObj = branches.find((b) => b.id === member.branch_id);
-
-    // Realistic distance within allowed radius
-    const maxRadius = event.radius_meters || 50;
-    const distance = Math.round((Math.random() * (maxRadius * 0.7) + 3) * 10) / 10;
-    const now = new Date();
-    const ticketId = crypto.randomUUID();
-
-    const record = {
-      id: ticketId,
-      event_id: event.id,
-      event_name: event.name,
-      venue: event.venue,
-      member_id: member.id,
-      member_code: member.member_code,
-      full_name: member.full_name,
-      role: member.role,
-      phone_number: member.phone_number,
-      division_id: member.division_id,
-      division_name: divObj ? divObj.name : 'Corporate Division',
-      branch_id: member.branch_id,
-      branch_name: branchObj ? branchObj.name : 'HQ Branch',
-      check_in_time: now.toISOString(),
-      latitude: event.latitude ? event.latitude + (Math.random() - 0.5) * 0.0002 : null,
-      longitude: event.longitude ? event.longitude + (Math.random() - 0.5) * 0.0002 : null,
-      distance_meters: distance,
-      verification_status: 'VERIFIED',
-      created_at: now.toISOString()
-    };
-
-    const attendanceRecords = mockDb.get('attendance');
-    attendanceRecords.unshift(record);
-    mockDb.save('attendance', attendanceRecords);
-
-    const auditLogs = mockDb.get('audit_logs');
-    auditLogs.unshift({
-      id: crypto.randomUUID(),
-      event_id: event.id,
-      member_id: member.id,
-      action: 'CHECK_IN_SUCCESS',
-      status: 'SUCCESS',
-      details: { attendance_id: ticketId, member_name: member.full_name, distance_meters: distance, simulated: true },
-      user_agent: 'Simulated Live Stream',
-      created_at: now.toISOString()
-    });
-    mockDb.save('audit_logs', auditLogs);
-
-    broadcastNewAttendance(record);
-
-    return {
-      success: true,
-      record,
-      message: `${member.full_name} (${member.member_code}) checked in live!`
     };
   },
 

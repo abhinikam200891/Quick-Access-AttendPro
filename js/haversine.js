@@ -294,13 +294,3 @@ export function watchGpsPosition(onPosition, onError, options = {}) {
   );
 }
 
-/**
- * Clear an active GPS watch
- * @param {number} watchId 
- */
-export function clearGpsWatch(watchId) {
-  if (watchId !== null && navigator.geolocation) {
-    navigator.geolocation.clearWatch(watchId);
-  }
-}
-

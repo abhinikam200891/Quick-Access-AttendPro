@@ -230,11 +230,6 @@
       </button>
     </div>
 
-    <div>
-      <button class="btn btn-primary btn-sm" id="btnOpenCreateEvent">
-        + Create New Event
-      </button>
-    </div>
   </nav>
 
   <!-- Main Container -->
@@ -284,6 +279,11 @@
         <div>
           <h2 class="section-title">Events &amp; QR Sessions</h2>
           <div class="section-subtitle">Assign staff to take attendance with rotating QR codes, set the GPS geofence and manage check-in windows.</div>
+        </div>
+        <div class="section-actions">
+          <button class="btn btn-primary btn-sm" id="btnOpenCreateEvent">
+            + Create New Event
+          </button>
         </div>
       </div>
 
@@ -343,6 +343,16 @@
               <option value="HOST_SELF">⭐ Attendance Taker (Self)</option>
               <option value="ADMIN_MANUAL">✍️ Manual (Admin)</option>
               <option value="VENUE_STATIC_QR">🏢 Legacy Static QR</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <select class="form-control form-select" id="filterStatus" title="Filter attendance by status" aria-label="Filter attendance by status">
+              <option value="All">All Statuses</option>
+              <option value="FLAGGED">🔎 Flagged (needs review)</option>
+              <option value="VERIFIED">✅ Verified</option>
+              <option value="MANUAL">✍️ Manual</option>
+              <option value="LATE">⏰ Late</option>
+              <option value="CHECKED_OUT">⬅️ Checked out</option>
             </select>
           </div>
           <div class="filter-group">
@@ -553,6 +563,9 @@
         </div>
         <div class="section-actions">
           <span class="badge badge-neutral" id="memberRecordCount">0 members</span>
+          <button class="btn btn-secondary btn-sm" id="btnOpenOrgStructure">
+            🏢 Divisions &amp; Branches
+          </button>
           <button class="btn btn-secondary btn-sm" id="btnOpenBulkImport">
             📥 Bulk Import CSV
           </button>
@@ -674,119 +687,11 @@
        MODALS
        ========================================================================= -->
 
-  <!-- 1. CREATE EVENT MODAL -->
-  <div class="modal-backdrop" id="createEventModal">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3 class="modal-title">Create New Attendance Event</h3>
-        <button class="modal-close">&times;</button>
-      </div>
-      <form id="createEventForm">
-        <div class="modal-body">
-          <div class="form-group">
-            <label class="form-label" for="eventName">Event Name <span class="required">*</span></label>
-            <input type="text" id="eventName" class="form-control" placeholder="e.g., Annual Strategy Summit 2026" required />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="eventVenue">Venue Location <span class="required">*</span></label>
-            <input type="text" id="eventVenue" class="form-control" placeholder="e.g., Grand Hyatt Ballroom, Hall 3" required />
-          </div>
-
-          <div class="form-row-2col">
-            <div class="form-group">
-              <label class="form-label" for="eventDate">Event Date <span class="required">*</span></label>
-              <input type="date" id="eventDate" class="form-control" required />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" for="eventPermittedRoles">Permitted Roles <span class="required">*</span></label>
-              <select id="eventPermittedRoles" class="form-control form-select" title="Permitted attendee roles" aria-label="Permitted attendee roles">
-                <option value="All">All (Staff &amp; Agents)</option>
-                <option value="Staff">Staff Only</option>
-                <option value="Agent">Agent Only</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="form-row-2col">
-            <div class="form-group">
-              <label class="form-label" for="eventStartTime">Check-in Opens (Start) <span class="required">*</span></label>
-              <input type="time" id="eventStartTime" class="form-control" value="08:00" required />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" for="eventEndTime">Check-in Closes (End) <span class="required">*</span></label>
-              <input type="time" id="eventEndTime" class="form-control" value="20:00" required />
-            </div>
-          </div>
-
-          <div class="form-row-2col">
-            <div class="form-group">
-              <label class="form-label" for="eventLateGrace">Mark Late After (minutes past start)</label>
-              <input type="number" id="eventLateGrace" class="form-control" value="15" min="0" max="600" placeholder="15" />
-            </div>
-            <div class="form-group coords-checkbox-wrap">
-              <label class="checkbox-label">
-                <input type="checkbox" id="eventCheckoutEnabled" />
-                <strong>Enable Check-Out</strong>
-              </label>
-            </div>
-          </div>
-
-          <!-- Geofence Coordinates -->
-          <div class="form-group geofence-box">
-            <div class="geofence-header">
-              <label class="form-label label-no-margin">📍 Venue GPS Coordinates &amp; Geofence <span class="required" title="Required when the geofence GPS check is on">*</span></label>
-              <button type="button" class="btn btn-secondary btn-sm" id="btnDetectAdminGps">
-                🎯 Use Current GPS Location
-              </button>
-            </div>
-
-            <!-- Interactive Leaflet Map Picker -->
-            <div class="geofence-map-wrapper" style="margin-bottom: 14px;">
-              <div class="map-toolbar">
-                <span style="font-weight:600; color:#1e293b; display:inline-flex; align-items:center; gap:6px;">
-                  <span>🗺️</span> Interactive Geofence Map Picker
-                </span>
-                <span style="font-size:0.75rem; color:#64748b;">Click map or drag pin to position</span>
-              </div>
-              <div id="adminGeofenceMap" class="geofence-map-container admin-picker"></div>
-            </div>
-
-            <div class="form-row-coords">
-              <input type="number" step="any" id="eventLatitude" class="form-control" placeholder="Latitude (e.g. 28.6139)" title="Venue latitude coordinates" aria-label="Venue latitude coordinates" />
-              <input type="number" step="any" id="eventLongitude" class="form-control" placeholder="Longitude (e.g. 77.2090)" title="Venue longitude coordinates" aria-label="Venue longitude coordinates" />
-            </div>
-
-            <div class="form-row-coords coords-spaced">
-              <div>
-                <label class="form-label" for="eventRadius">Allowed Radius (Meters) <span class="required">*</span></label>
-                <input type="number" id="eventRadius" class="form-control" value="50" min="10" max="5000" required />
-              </div>
-              <div class="coords-checkbox-wrap">
-                <label class="checkbox-label">
-                  <input type="checkbox" id="eventLocationRequired" checked />
-                  <strong>Enforce Geofence GPS Check</strong>
-                </label>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary btn-modal-dismiss">Cancel</button>
-          <button type="submit" class="btn btn-primary">Create Event</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- 1B. EDIT EVENT MODAL -->
+  <!-- 1. EVENT FORM: one form for creating and editing events -->
   <div class="modal-backdrop" id="editEventModal">
     <div class="modal-card">
       <div class="modal-header">
-        <h3 class="modal-title">✏️ Edit Attendance Event</h3>
+        <h3 class="modal-title" id="eventModalTitle">✏️ Edit Attendance Event</h3>
         <button class="modal-close">&times;</button>
       </div>
       <form id="editEventForm">
@@ -829,6 +734,8 @@
               <input type="time" id="editEventEndTime" class="form-control" required />
             </div>
           </div>
+          <!-- Explains overnight windows, or why the times are not valid -->
+          <div class="form-hint" id="eventWindowHint" role="status" style="margin: -6px 0 12px;"></div>
 
           <div class="form-row-2col">
             <div class="form-group">
@@ -944,6 +851,33 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary btn-modal-dismiss">Close</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 2B. REVIEW A FLAGGED CHECK-IN -->
+  <div class="modal-backdrop" id="reviewAttendanceModal">
+    <div class="modal-card" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3 class="modal-title">🔎 Review Flagged Check-In</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <form id="reviewAttendanceForm">
+        <div class="modal-body">
+          <dl class="review-details" id="reviewDetails"></dl>
+          <div class="form-group">
+            <label class="form-label" for="reviewNote">Note <span class="required">*</span></label>
+            <textarea id="reviewNote" class="form-control" rows="3" required placeholder="e.g. Confirmed with the attendance taker at Gate 2"></textarea>
+            <div class="form-hint">Approve keeps the check-in and marks it verified. Reject removes it so the person can check in again. Both are saved in the audit log with your note.</div>
+          </div>
+        </div>
+        <div class="modal-footer" style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+          <button type="button" class="btn btn-ghost btn-sm" id="btnReviewReject" style="color:var(--accent-rose);">✕ Reject &amp; Remove</button>
+          <div style="display:flex; gap:8px;">
+            <button type="button" class="btn btn-secondary btn-modal-dismiss">Cancel</button>
+            <button type="button" class="btn btn-primary" id="btnReviewApprove">✓ Approve</button>
+          </div>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -1108,6 +1042,30 @@
           <button type="submit" class="btn btn-primary" id="btnSaveMember">Save Member</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- 3A. DIVISIONS & BRANCHES -->
+  <div class="modal-backdrop" id="orgStructureModal">
+    <div class="modal-card modal-card-lg">
+      <div class="modal-header">
+        <h3 class="modal-title">🏢 Divisions &amp; Branches</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="addDivisionForm" class="org-add-row">
+          <input type="text" id="newDivisionName" class="form-control" placeholder="New division name" aria-label="New division name" required />
+          <input type="text" id="newDivisionCode" class="form-control org-code-input" placeholder="Code (optional)" aria-label="New division code" />
+          <button type="submit" class="btn btn-primary btn-sm">+ Add Division</button>
+        </form>
+        <p class="form-hint" style="margin: 0 0 12px;">
+          A division or branch can only be deleted once no members are assigned to it. Deleting a division also deletes its empty branches.
+        </p>
+        <div id="orgStructureList"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-modal-dismiss">Close</button>
+      </div>
     </div>
   </div>
 

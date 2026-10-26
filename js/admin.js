@@ -10,6 +10,7 @@ import { getSupabaseConfig, saveSupabaseConfig, setRunMode, testSupabaseConnecti
 import { initVisualAnalytics, updateVisualAnalytics, populateAnalyticsEventFilter } from './admin-analytics.js';
 import { soundController } from './audio-chime.js';
 import { initAdminGeofencePicker } from './geo-map.js';
+import { formatWindow, isOvernight, validateEventTimes } from './event-window.js';
 import { initAdminAuth } from './admin-auth.js';
 
 // Application State
@@ -22,14 +23,15 @@ const state = {
   branches: [],
   auditLogs: [],
   selectedEventForHosts: null,
-  geofencePicker: null,
   attendanceView: 'present', // 'present' | 'pending'
   liveStatus: 'offline', // 'live' | 'offline' (polling)
   lastSyncAt: null, // ISO time of the newest change seen, for incremental polling
   pendingManualMark: null, // { eventId, memberId } while the manual-mark modal is open
+  pendingReviewId: null, // attendance id while the review modal is open
   activeFilters: {
     eventId: '',
     checkInMode: 'All',
+    status: 'All',
     role: 'All',
     divisionId: 'All',
     branchId: 'All',
@@ -68,11 +70,6 @@ function showToast(message, type = 'info') {
 }
 
 // Formatters
-function formatTime(isoTime) {
-  if (!isoTime) return 'N/A';
-  return isoTime.slice(0, 5);
-}
-
 function formatDate(isoDate) {
   if (!isoDate) return 'N/A';
   const d = new Date(isoDate);
@@ -258,7 +255,7 @@ function renderEventsGrid() {
             </div>
             <div class="event-meta-row">
               <span>🗓️</span>
-              <span>${formatDate(event.date)} &bull; ${formatTime(event.start_time)} - ${formatTime(event.end_time)}</span>
+              <span>${formatDate(event.date)} &bull; ${formatWindow(event)}</span>
             </div>
             <div class="event-meta-row">
               <span>👥</span>
@@ -302,7 +299,7 @@ function renderEventsGrid() {
   });
 
   container.querySelectorAll('.btn-edit-event').forEach((btn) => {
-    btn.onclick = () => openEditEventModal(btn.dataset.id);
+    btn.onclick = () => openEventForm(btn.dataset.id);
   });
 
   container.querySelectorAll('.btn-toggle-status').forEach((btn) => {
@@ -340,30 +337,65 @@ function openDeleteEventModal(eventId) {
   if (modal) modal.classList.add('active');
 }
 
-// Open Edit Event Modal
-function openEditEventModal(eventId) {
-  const event = state.events.find((e) => e.id === eventId);
-  if (!event) return;
+// Today's date in the admin's own timezone (toISOString would give the UTC date)
+function localTodayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Shows under the time fields whether the window runs into the next day, or why it is invalid
+ */
+function updateEventWindowHint() {
+  const hint = document.getElementById('eventWindowHint');
+  if (!hint) return;
+  const start = document.getElementById('editEventStartTime').value;
+  const end = document.getElementById('editEventEndTime').value;
+  const error = validateEventTimes(start, end);
+  if (error) {
+    hint.textContent = start && end ? `⚠️ ${error}` : '';
+    hint.style.color = 'var(--accent-rose)';
+  } else if (isOvernight({ start_time: start, end_time: end })) {
+    hint.textContent = `🌙 Overnight event: check-in closes at ${end} on the next day.`;
+    hint.style.color = 'var(--text-secondary)';
+  } else {
+    hint.textContent = '';
+  }
+}
+
+/**
+ * One form for creating (eventId = null) and editing events
+ */
+function openEventForm(eventId = null) {
+  const event = eventId ? state.events.find((e) => e.id === eventId) : null;
+  if (eventId && !event) return;
 
   const modal = document.getElementById('editEventModal');
   if (!modal) return;
+  const isCreate = !event;
 
-  document.getElementById('editEventId').value = event.id;
-  document.getElementById('editEventName').value = event.name || '';
-  document.getElementById('editEventVenue').value = event.venue || '';
-  document.getElementById('editEventDate').value = event.date || '';
-  document.getElementById('editEventPermittedRoles').value = event.permitted_roles || 'All';
-  document.getElementById('editEventStartTime').value = (event.start_time || '08:00').slice(0, 5);
-  document.getElementById('editEventEndTime').value = (event.end_time || '20:00').slice(0, 5);
-  document.getElementById('editEventRadius').value = event.radius_meters || 50;
-  document.getElementById('editEventLocationRequired').checked = Boolean(event.location_required);
-  document.getElementById('editEventLateGrace').value = event.late_grace_minutes ?? 15;
-  document.getElementById('editEventCheckoutEnabled').checked = Boolean(event.checkout_enabled);
+  document.getElementById('eventModalTitle').textContent = isCreate ? '📅 Create Attendance Event' : '✏️ Edit Attendance Event';
+  document.getElementById('btnSaveEditedEvent').textContent = isCreate ? 'Create Event' : '💾 Save Changes';
+  document.getElementById('btnDeleteFromEditModal').classList.toggle('is-hidden', isCreate);
 
-  const lat = event.latitude !== null && event.latitude !== undefined && event.latitude !== '' ? Number(event.latitude) : 28.6139;
-  const lng = event.longitude !== null && event.longitude !== undefined && event.longitude !== '' ? Number(event.longitude) : 77.2090;
-  document.getElementById('editEventLatitude').value = event.latitude !== null && event.latitude !== undefined ? event.latitude : '';
-  document.getElementById('editEventLongitude').value = event.longitude !== null && event.longitude !== undefined ? event.longitude : '';
+  document.getElementById('editEventId').value = event?.id || '';
+  document.getElementById('editEventName').value = event?.name || '';
+  document.getElementById('editEventVenue').value = event?.venue || '';
+  document.getElementById('editEventDate').value = event?.date || localTodayISO();
+  document.getElementById('editEventPermittedRoles').value = event?.permitted_roles || 'All';
+  document.getElementById('editEventStartTime').value = (event?.start_time || '08:00').slice(0, 5);
+  document.getElementById('editEventEndTime').value = (event?.end_time || '20:00').slice(0, 5);
+  document.getElementById('editEventRadius').value = event?.radius_meters || 50;
+  document.getElementById('editEventLocationRequired').checked = isCreate ? true : Boolean(event.location_required);
+  document.getElementById('editEventLateGrace').value = event?.late_grace_minutes ?? 15;
+  document.getElementById('editEventCheckoutEnabled').checked = Boolean(event?.checkout_enabled);
+  updateEventWindowHint();
+
+  const hasCoords = event && hasVenueCoordinates(event);
+  const lat = hasCoords ? Number(event.latitude) : 28.6139;
+  const lng = hasCoords ? Number(event.longitude) : 77.2090;
+  document.getElementById('editEventLatitude').value = hasCoords ? event.latitude : '';
+  document.getElementById('editEventLongitude').value = hasCoords ? event.longitude : '';
 
   modal.classList.add('active');
 
@@ -384,6 +416,13 @@ function openEditEventModal(eventId) {
     } else {
       state.editGeofencePicker.setCoordinates(lat, lng);
       state.editGeofencePicker.setRadius(radius);
+      state.editGeofencePicker.invalidateSize();
+      // Moving the pin fills the coordinate boxes; keep them empty when the venue is not set yet,
+      // so the map's default position is never saved as the venue by accident
+      if (!hasCoords) {
+        latInput.value = '';
+        lngInput.value = '';
+      }
     }
   }, 150);
 }
@@ -667,7 +706,19 @@ async function openHostsModal(eventId) {
         if (!confirm(`Reset device lock for ${memberName}?\n\nThey will be able to bind a new mobile phone when opening the beacon link.`)) return;
         btn.disabled = true;
         btn.textContent = 'Resetting...';
-        await dbService.resetHostDeviceLock(event.id, memberId);
+        let cleared = false;
+        try {
+          cleared = await dbService.resetHostDeviceLock(event.id, memberId);
+        } catch (err) {
+          console.error('Reset device lock failed:', err);
+        }
+        if (!cleared) {
+          // Leave the lock shown as it is: the phone is still bound
+          btn.disabled = false;
+          btn.textContent = '🔓 Reset Device Lock';
+          showToast(`Could not reset the device lock for ${memberName}. Check your connection and try again.`, 'error');
+          return;
+        }
         const stateObj = workingState.get(memberId);
         if (stateObj) {
           stateObj.deviceId = null;
@@ -838,6 +889,7 @@ function getFilteredAttendance() {
   return state.attendance.filter((r) => {
     if (f.eventId && r.event_id !== f.eventId) return false;
     if (f.checkInMode && f.checkInMode !== 'All' && r.check_in_mode !== f.checkInMode) return false;
+    if (f.status && f.status !== 'All' && !matchesStatusFilter(r, f.status)) return false;
     if (f.role && f.role !== 'All' && r.role !== f.role) return false;
     if (f.divisionId && f.divisionId !== 'All' && r.division_id !== f.divisionId) return false;
     if (f.branchId && f.branchId !== 'All' && r.branch_id !== f.branchId) return false;
@@ -866,11 +918,18 @@ function checkInModeBadge(record) {
   return '<span class="badge badge-mode-venue">Legacy Static QR</span>';
 }
 
+function matchesStatusFilter(record, status) {
+  if (status === 'LATE') return Boolean(record.is_late);
+  if (status === 'CHECKED_OUT') return Boolean(record.check_out_time);
+  return (record.verification_status || 'VERIFIED') === status;
+}
+
 function verificationBadges(record) {
   const notes = record.verification_notes ? ` title="${escapeHtml(record.verification_notes)}"` : '';
   let badge = '<span class="badge badge-success">VERIFIED</span>';
   if (record.verification_status === 'FLAGGED') {
-    badge = `<span class="badge badge-warning"${notes}>🔎 FLAGGED</span>`;
+    badge = `<span class="badge badge-warning"${notes}>🔎 FLAGGED</span>`
+      + `<br /><button type="button" class="btn btn-secondary btn-sm btn-review-flagged" data-record-id="${escapeHtml(record.id)}">Review</button>`;
   } else if (record.verification_status === 'MANUAL') {
     badge = `<span class="badge badge-info"${notes}>MANUAL</span>`;
   }
@@ -1035,6 +1094,194 @@ function setAttendanceView(view) {
   document.getElementById('btnViewPending')?.classList.toggle('active', view === 'pending');
   document.getElementById('presentTableWrap')?.classList.toggle('is-hidden', view !== 'present');
   document.getElementById('pendingTableWrap')?.classList.toggle('is-hidden', view !== 'pending');
+}
+
+// -----------------------------------------------------------------------------
+// DIVISIONS & BRANCHES MANAGER
+// -----------------------------------------------------------------------------
+let orgEditing = null; // { type: 'division' | 'branch', id } while a row is being renamed
+
+function renderOrgStructure() {
+  const list = document.getElementById('orgStructureList');
+  if (!list) return;
+
+  if (state.divisions.length === 0) {
+    list.innerHTML = '<p class="org-empty">No divisions yet. Add the first one above.</p>';
+    return;
+  }
+
+  const countBy = (key) => state.members.reduce((map, m) => map.set(m[key], (map.get(m[key]) || 0) + 1), new Map());
+  const membersByDivision = countBy('division_id');
+  const membersByBranch = countBy('branch_id');
+  const plural = (n, word, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
+
+  const nameCell = (type, item, meta) => {
+    if (orgEditing && orgEditing.type === type && orgEditing.id === item.id) {
+      return `
+        <form class="org-add-row org-rename-form" data-type="${type}" data-id="${escapeHtml(item.id)}" style="margin:0; flex:1;">
+          <input type="text" name="name" class="form-control" value="${escapeHtml(item.name)}" aria-label="${type} name" required />
+          <input type="text" name="code" class="form-control org-code-input" value="${escapeHtml(item.code || '')}" aria-label="${type} code" />
+          <button type="submit" class="btn btn-primary btn-sm">Save</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-action="cancel-rename">Cancel</button>
+        </form>`;
+    }
+    return `
+      <div class="org-name">
+        <strong>${escapeHtml(item.name)}</strong><span class="org-code">${escapeHtml(item.code || '')}</span>
+        <span class="org-meta">${meta}</span>
+      </div>`;
+  };
+
+  const actions = (type, item, memberCount) => {
+    if (orgEditing && orgEditing.type === type && orgEditing.id === item.id) return '';
+    const blocked = memberCount > 0;
+    return `
+      <div class="org-actions">
+        <button type="button" class="btn btn-ghost btn-sm" data-action="rename" data-type="${type}" data-id="${escapeHtml(item.id)}">Rename</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-action="delete" data-type="${type}" data-id="${escapeHtml(item.id)}"
+          ${blocked ? `disabled title="Move its ${plural(memberCount, 'member')} first"` : ''} style="color:var(--accent-rose);">Delete</button>
+      </div>`;
+  };
+
+  list.innerHTML = state.divisions
+    .map((division) => {
+      const branches = state.branches.filter((b) => b.division_id === division.id);
+      const divisionMembers = membersByDivision.get(division.id) || 0;
+      const branchItems = branches.length
+        ? branches.map((branch) => {
+            const branchMembers = membersByBranch.get(branch.id) || 0;
+            return `
+              <li class="org-row">
+                ${nameCell('branch', branch, plural(branchMembers, 'member'))}
+                ${actions('branch', branch, branchMembers)}
+              </li>`;
+          }).join('')
+        : '<li class="org-empty">No branches yet.</li>';
+
+      return `
+        <section class="org-division">
+          <div class="org-row org-division-row">
+            ${nameCell('division', division, `${plural(divisionMembers, 'member')} • ${plural(branches.length, 'branch', 'branches')}`)}
+            ${actions('division', division, divisionMembers)}
+          </div>
+          <ul class="org-branches">${branchItems}</ul>
+          <form class="org-add-row org-add-branch" data-division-id="${escapeHtml(division.id)}">
+            <input type="text" name="name" class="form-control" placeholder="New branch name" aria-label="New branch name in ${escapeHtml(division.name)}" required />
+            <input type="text" name="code" class="form-control org-code-input" placeholder="Code (optional)" aria-label="New branch code" />
+            <button type="submit" class="btn btn-secondary btn-sm">+ Add Branch</button>
+          </form>
+        </section>`;
+    })
+    .join('');
+}
+
+/**
+ * Reload divisions and branches after a change and refresh every dropdown that lists them
+ */
+async function reloadOrgStructure() {
+  state.divisions = await dbService.getDivisions();
+  state.branches = await dbService.getBranches();
+  populateFilterDropdowns();
+  populateMemberFilterDropdowns();
+  renderOrgStructure();
+}
+
+async function runOrgChange(action, successMessage) {
+  try {
+    await action();
+    orgEditing = null;
+    await reloadOrgStructure();
+    showToast(successMessage, 'success');
+    return true;
+  } catch (err) {
+    showToast(err.message || 'Could not save the change.', 'error');
+    return false;
+  }
+}
+
+function setupOrgStructureManager() {
+  const modal = document.getElementById('orgStructureModal');
+  const list = document.getElementById('orgStructureList');
+  const addDivisionForm = document.getElementById('addDivisionForm');
+
+  document.getElementById('btnOpenOrgStructure')?.addEventListener('click', () => {
+    orgEditing = null;
+    renderOrgStructure();
+    modal.classList.add('active');
+  });
+
+  addDivisionForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('newDivisionName').value.trim();
+    const code = document.getElementById('newDivisionCode').value.trim();
+    const ok = await runOrgChange(() => dbService.saveDivision({ name, code }), `Division "${name}" added.`);
+    if (ok) addDivisionForm.reset();
+  });
+
+  list?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const name = form.elements.name.value.trim();
+    const code = form.elements.code.value.trim();
+    if (form.classList.contains('org-add-branch')) {
+      await runOrgChange(() => dbService.saveBranch({ divisionId: form.dataset.divisionId, name, code }), `Branch "${name}" added.`);
+    } else if (form.classList.contains('org-rename-form')) {
+      const { type, id } = form.dataset;
+      if (type === 'division') {
+        await runOrgChange(() => dbService.saveDivision({ id, name, code }), 'Division renamed.');
+      } else {
+        const branch = state.branches.find((b) => b.id === id);
+        await runOrgChange(() => dbService.saveBranch({ id, divisionId: branch?.division_id, name, code }), 'Branch renamed.');
+      }
+    }
+  });
+
+  list?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const { action, type, id } = btn.dataset;
+
+    if (action === 'rename') {
+      orgEditing = { type, id };
+      renderOrgStructure();
+      list.querySelector('.org-rename-form input[name="name"]')?.focus();
+    } else if (action === 'cancel-rename') {
+      orgEditing = null;
+      renderOrgStructure();
+    } else if (action === 'delete') {
+      const item = (type === 'division' ? state.divisions : state.branches).find((x) => x.id === id);
+      const branchCount = type === 'division' ? state.branches.filter((b) => b.division_id === id).length : 0;
+      const extra = branchCount > 0 ? ` Its ${branchCount} empty branch${branchCount === 1 ? '' : 'es'} will be deleted too.` : '';
+      if (!confirm(`Delete the ${type} "${item?.name}"?${extra}`)) return;
+      await runOrgChange(
+        () => (type === 'division' ? dbService.deleteDivision(id) : dbService.deleteBranch(id)),
+        `${type === 'division' ? 'Division' : 'Branch'} deleted.`
+      );
+    }
+  });
+}
+
+function openReviewModal(recordId) {
+  const record = state.attendance.find((r) => r.id === recordId);
+  if (!record) return;
+  state.pendingReviewId = recordId;
+
+  const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : '-');
+  const rows = [
+    ['Attendee', `${record.full_name} (${record.member_code})`],
+    ['Event', record.event_name],
+    ['Checked in', fmt(record.check_in_time)],
+    ['Distance', record.distance_meters !== null && record.distance_meters !== undefined ? `${Math.round(record.distance_meters)} m from the venue` : 'Not recorded'],
+    ['GPS accuracy', record.accuracy_meters !== null && record.accuracy_meters !== undefined ? `±${Math.round(record.accuracy_meters)} m` : 'Not recorded'],
+    ['Attendance taker', record.host_name || record.host_member_code || '-'],
+    ['Why flagged', record.verification_notes || '-']
+  ];
+  document.getElementById('reviewDetails').innerHTML = rows
+    .map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`)
+    .join('');
+  document.getElementById('reviewNote').value = '';
+  document.getElementById('reviewAttendanceModal').classList.add('active');
+  setTimeout(() => document.getElementById('reviewNote')?.focus(), 50);
 }
 
 function openManualMarkModal(event, memberId, memberName) {
@@ -1445,6 +1692,8 @@ async function renderAuditLogsTable() {
 // EVENT LISTENERS & MODALS
 // -----------------------------------------------------------------------------
 function setupEventListeners() {
+  setupOrgStructureManager();
+
   // Modal Close buttons
   document.querySelectorAll('.modal-close, .btn-modal-dismiss').forEach((btn) => {
     btn.onclick = (e) => {
@@ -1453,132 +1702,17 @@ function setupEventListeners() {
     };
   });
 
-  // Create Event Button & Modal
+  // Event form (create and edit share one form)
   const btnOpenCreate = document.getElementById('btnOpenCreateEvent');
-  const createModal = document.getElementById('createEventModal');
-  const eventForm = document.getElementById('createEventForm');
+  if (btnOpenCreate) btnOpenCreate.onclick = () => openEventForm(null);
 
-  if (btnOpenCreate && createModal) {
-    btnOpenCreate.onclick = () => {
-      eventForm.reset();
-      // Set default date to today
-      const today = new Date().toISOString().slice(0, 10);
-      document.getElementById('eventDate').value = today;
-      document.getElementById('eventStartTime').value = '08:00';
-      document.getElementById('eventEndTime').value = '20:00';
-      createModal.classList.add('active');
-
-      // Initialize or refresh Leaflet geofence picker after modal animation
-      setTimeout(() => {
-        const latInput = document.getElementById('eventLatitude');
-        const lngInput = document.getElementById('eventLongitude');
-        const radInput = document.getElementById('eventRadius');
-        const lat = parseFloat(latInput?.value) || 28.6139;
-        const lng = parseFloat(lngInput?.value) || 77.2090;
-        const radius = parseInt(radInput?.value, 10) || 50;
-
-        if (!state.geofencePicker) {
-          state.geofencePicker = initAdminGeofencePicker('adminGeofenceMap', {
-            initialLat: lat,
-            initialLng: lng,
-            initialRadius: radius,
-            onLocationChange: ({ lat: newLat, lng: newLng }) => {
-              if (latInput) latInput.value = newLat.toFixed(6);
-              if (lngInput) lngInput.value = newLng.toFixed(6);
-            }
-          });
-        } else {
-          state.geofencePicker.setCoordinates(lat, lng);
-          state.geofencePicker.setRadius(radius);
-          state.geofencePicker.invalidateSize();
-        }
-      }, 150);
-    };
-  }
-
-  // Allowed Radius Input listener for live Geofence map circle update
-  const eventRadiusInput = document.getElementById('eventRadius');
-  if (eventRadiusInput) {
-    eventRadiusInput.addEventListener('input', (e) => {
-      const rad = parseInt(e.target.value, 10) || 50;
-      if (state.geofencePicker) {
-        state.geofencePicker.setRadius(rad);
-      }
-    });
-  }
-
-  // Manual Coordinate Input listeners to reposition Geofence map pin
-  const syncManualCoordsToMap = () => {
-    const lat = parseFloat(document.getElementById('eventLatitude')?.value);
-    const lng = parseFloat(document.getElementById('eventLongitude')?.value);
-    if (!isNaN(lat) && !isNaN(lng) && state.geofencePicker) {
-      state.geofencePicker.setCoordinates(lat, lng);
-    }
-  };
-  document.getElementById('eventLatitude')?.addEventListener('change', syncManualCoordsToMap);
-  document.getElementById('eventLongitude')?.addEventListener('change', syncManualCoordsToMap);
-
-  // Auto-detect Admin GPS location for venue coordinates
-  const btnDetectLocation = document.getElementById('btnDetectAdminGps');
-  if (btnDetectLocation) {
-    btnDetectLocation.onclick = async () => {
-      try {
-        btnDetectLocation.disabled = true;
-        btnDetectLocation.textContent = 'Detecting GPS...';
-        const pos = await getCurrentPosition();
-        document.getElementById('eventLatitude').value = pos.latitude.toFixed(6);
-        document.getElementById('eventLongitude').value = pos.longitude.toFixed(6);
-        if (state.geofencePicker) {
-          state.geofencePicker.setCoordinates(pos.latitude, pos.longitude);
-        }
-        showToast(`Venue GPS locked: ${pos.latitude.toFixed(4)}, ${pos.longitude.toFixed(4)}`, 'success');
-      } catch (err) {
-        showToast(err.message, 'error');
-      } finally {
-        btnDetectLocation.disabled = false;
-        btnDetectLocation.textContent = '🎯 Use Current GPS Location';
-      }
-    };
-  }
-
-  // Create Event Form Submit
-  if (eventForm) {
-    eventForm.onsubmit = async (e) => {
-      e.preventDefault();
-      try {
-        const payload = {
-          name: document.getElementById('eventName').value.trim(),
-          venue: document.getElementById('eventVenue').value.trim(),
-          date: document.getElementById('eventDate').value,
-          start_time: document.getElementById('eventStartTime').value + ':00',
-          end_time: document.getElementById('eventEndTime').value + ':00',
-          permitted_roles: document.getElementById('eventPermittedRoles').value,
-          latitude: document.getElementById('eventLatitude').value || null,
-          longitude: document.getElementById('eventLongitude').value || null,
-          radius_meters: Number(document.getElementById('eventRadius').value) || 50,
-          location_required: document.getElementById('eventLocationRequired').checked,
-          late_grace_minutes: readLateGrace('eventLateGrace'),
-          checkout_enabled: document.getElementById('eventCheckoutEnabled').checked
-        };
-
-        if (payload.location_required && !hasVenueCoordinates(payload)) {
-          showToast('Set the venue location on the map (or untick "Enforce Geofence GPS Check") before creating the event.', 'error');
-          return;
-        }
-
-        await dbService.createEvent(payload);
-        createModal.classList.remove('active');
-        showToast('Event created successfully!', 'success');
-        await refreshAllData();
-      } catch (err) {
-        showToast(err.message || 'Failed to create event', 'error');
-      }
-    };
-  }
-
-  // Edit Event Form Submit & GPS listeners
   const editEventForm = document.getElementById('editEventForm');
   const editModal = document.getElementById('editEventModal');
+
+  // Explain overnight windows and catch identical times while the admin types
+  ['editEventStartTime', 'editEventEndTime'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('input', updateEventWindowHint);
+  });
 
   const editRadiusInput = document.getElementById('editEventRadius');
   if (editRadiusInput) {
@@ -1626,59 +1760,57 @@ function setupEventListeners() {
     editEventForm.onsubmit = async (e) => {
       e.preventDefault();
       const eventId = document.getElementById('editEventId').value;
-      if (!eventId) return;
+      const isCreate = !eventId;
+      const withSeconds = (value) => (value.length === 5 ? `${value}:00` : value);
+
+      const payload = {
+        name: document.getElementById('editEventName').value.trim(),
+        venue: document.getElementById('editEventVenue').value.trim(),
+        date: document.getElementById('editEventDate').value,
+        start_time: withSeconds(document.getElementById('editEventStartTime').value),
+        end_time: withSeconds(document.getElementById('editEventEndTime').value),
+        permitted_roles: document.getElementById('editEventPermittedRoles').value,
+        latitude: document.getElementById('editEventLatitude').value ? Number(document.getElementById('editEventLatitude').value) : null,
+        longitude: document.getElementById('editEventLongitude').value ? Number(document.getElementById('editEventLongitude').value) : null,
+        radius_meters: Number(document.getElementById('editEventRadius').value) || 50,
+        location_required: document.getElementById('editEventLocationRequired').checked,
+        late_grace_minutes: readLateGrace('editEventLateGrace'),
+        checkout_enabled: document.getElementById('editEventCheckoutEnabled').checked
+      };
+
+      const timeError = validateEventTimes(payload.start_time, payload.end_time);
+      if (timeError) {
+        showToast(timeError, 'error');
+        document.getElementById('editEventEndTime')?.focus();
+        return;
+      }
+      if (payload.location_required && !hasVenueCoordinates(payload)) {
+        showToast('Set the venue location on the map (or untick "Enforce Geofence GPS Check") before saving.', 'error');
+        return;
+      }
 
       const submitBtn = document.getElementById('btnSaveEditedEvent');
       if (submitBtn) {
         submitBtn.disabled = true;
-        submitBtn.textContent = 'Saving Changes...';
+        submitBtn.textContent = isCreate ? 'Creating Event...' : 'Saving Changes...';
       }
 
       try {
-        const payload = {
-          name: document.getElementById('editEventName').value.trim(),
-          venue: document.getElementById('editEventVenue').value.trim(),
-          date: document.getElementById('editEventDate').value,
-          start_time: document.getElementById('editEventStartTime').value.length === 5
-            ? document.getElementById('editEventStartTime').value + ':00'
-            : document.getElementById('editEventStartTime').value,
-          end_time: document.getElementById('editEventEndTime').value.length === 5
-            ? document.getElementById('editEventEndTime').value + ':00'
-            : document.getElementById('editEventEndTime').value,
-          permitted_roles: document.getElementById('editEventPermittedRoles').value,
-          latitude: document.getElementById('editEventLatitude').value ? Number(document.getElementById('editEventLatitude').value) : null,
-          longitude: document.getElementById('editEventLongitude').value ? Number(document.getElementById('editEventLongitude').value) : null,
-          radius_meters: Number(document.getElementById('editEventRadius').value) || 50,
-          location_required: document.getElementById('editEventLocationRequired').checked,
-          late_grace_minutes: readLateGrace('editEventLateGrace'),
-          checkout_enabled: document.getElementById('editEventCheckoutEnabled').checked
-        };
-
-        if (payload.location_required && !hasVenueCoordinates(payload)) {
-          showToast('Set the venue location on the map (or untick "Enforce Geofence GPS Check") before saving.', 'error');
-          return;
+        if (isCreate) {
+          await dbService.createEvent(payload);
+        } else {
+          await dbService.updateEvent(eventId, payload);
         }
-
-        const updated = await dbService.updateEvent(eventId, payload);
-        if (updated) {
-          const idx = state.events.findIndex((ev) => ev.id === eventId);
-          if (idx !== -1) {
-            state.events[idx] = { ...state.events[idx], ...updated };
-          }
-        }
-
         if (editModal) editModal.classList.remove('active');
-        showToast('Event updated successfully! New schedule & GPS radius applied.', 'success');
-        renderEventsGrid();
-        renderKpis();
+        showToast(isCreate ? 'Event created.' : 'Event updated.', 'success');
         await refreshAllData();
       } catch (err) {
-        console.error('Update event error:', err);
-        showToast(err.message || 'Failed to update event.', 'error');
+        console.error('Save event error:', err);
+        showToast(err.message || 'Failed to save the event.', 'error');
       } finally {
         if (submitBtn) {
           submitBtn.disabled = false;
-          submitBtn.textContent = '💾 Save Changes';
+          submitBtn.textContent = isCreate ? 'Create Event' : '💾 Save Changes';
         }
       }
     };
@@ -1723,6 +1855,7 @@ function setupEventListeners() {
   // Filter Listeners
   const filterEvent = document.getElementById('filterEvent');
   const filterMode = document.getElementById('filterMode');
+  const filterStatus = document.getElementById('filterStatus');
   const filterRole = document.getElementById('filterRole');
   const filterDivision = document.getElementById('filterDivision');
   const filterBranch = document.getElementById('filterBranch');
@@ -1732,6 +1865,7 @@ function setupEventListeners() {
   const onFilterChange = () => {
     state.activeFilters.eventId = filterEvent.value;
     state.activeFilters.checkInMode = filterMode ? filterMode.value : 'All';
+    state.activeFilters.status = filterStatus ? filterStatus.value : 'All';
     state.activeFilters.role = filterRole.value;
     state.activeFilters.divisionId = filterDivision.value;
     state.activeFilters.branchId = filterBranch.value;
@@ -1740,10 +1874,56 @@ function setupEventListeners() {
     renderAttendanceTable();
   };
 
-  [filterEvent, filterMode, filterRole, filterDivision, filterBranch, filterDate].forEach((el) => {
+  [filterEvent, filterMode, filterStatus, filterRole, filterDivision, filterBranch, filterDate].forEach((el) => {
     if (el) el.onchange = onFilterChange;
   });
   if (filterSearch) filterSearch.oninput = onFilterChange;
+
+  // Review buttons are re-rendered with the table, so listen on the table body
+  document.getElementById('attendanceTableBody')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-review-flagged');
+    if (btn) openReviewModal(btn.dataset.recordId);
+  });
+
+  const reviewNote = document.getElementById('reviewNote');
+  const submitReview = async (decision) => {
+    const recordId = state.pendingReviewId;
+    const note = reviewNote.value.trim();
+    if (!recordId) return;
+    if (!note) {
+      showToast('Enter a note explaining the decision.', 'error');
+      reviewNote.focus();
+      return;
+    }
+    const buttons = [document.getElementById('btnReviewApprove'), document.getElementById('btnReviewReject')];
+    buttons.forEach((b) => { if (b) b.disabled = true; });
+    try {
+      const result = await dbService.reviewAttendance(recordId, decision, note);
+      if (!result?.success) {
+        showToast(result?.message || 'Could not save the review.', 'error');
+        return;
+      }
+      if (decision === 'APPROVE') {
+        applyLiveAttendance({
+          ...state.attendance.find((r) => r.id === recordId),
+          verification_status: 'VERIFIED',
+          verification_notes: [state.attendance.find((r) => r.id === recordId)?.verification_notes, `Approved by admin: ${note}`].filter(Boolean).join('; ')
+        }, { quiet: true });
+      } else {
+        applyLiveAttendance({ id: recordId, _deleted: true });
+      }
+      document.getElementById('reviewAttendanceModal').classList.remove('active');
+      state.pendingReviewId = null;
+      showToast(decision === 'APPROVE' ? 'Check-in approved.' : 'Check-in rejected and removed. The person can check in again.', 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      buttons.forEach((b) => { if (b) b.disabled = false; });
+    }
+  };
+  document.getElementById('btnReviewApprove')?.addEventListener('click', () => submitReview('APPROVE'));
+  document.getElementById('btnReviewReject')?.addEventListener('click', () => submitReview('REJECT'));
+  document.getElementById('reviewAttendanceForm')?.addEventListener('submit', (e) => e.preventDefault());
 
   // Division select in filters cascades branch dropdown
   if (filterDivision) {
@@ -2303,6 +2483,18 @@ async function syncAttendanceSince() {
  */
 function applyLiveAttendance(record, { quiet = false } = {}) {
   if (!record || !record.id) return;
+
+  // A rejected review removed the record (from this dashboard or another)
+  if (record._deleted) {
+    const before = state.attendance.length;
+    state.attendance = state.attendance.filter((r) => r.id !== record.id);
+    if (state.attendance.length !== before) {
+      renderKpis();
+      renderAttendanceTable();
+      updateVisualAnalytics(state);
+    }
+    return;
+  }
 
   const idx = state.attendance.findIndex((r) => r.id === record.id);
   const isNew = idx === -1;

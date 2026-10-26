@@ -7,6 +7,7 @@
 import confetti from 'canvas-confetti';
 import { dbService } from './db-service.js';
 import { acquireBestPosition, evaluateGeofence, formatDistance } from './haversine.js';
+import { formatWindow } from './event-window.js';
 import { initAttendeeRadarMap } from './geo-map.js';
 import { openInAppScanner } from './camera-scanner.js';
 import { soundController } from './audio-chime.js';
@@ -256,7 +257,7 @@ function renderEventHeader(event) {
   if (titleEl) titleEl.textContent = event.name;
   if (venueEl) venueEl.textContent = event.venue;
   if (dateEl) dateEl.textContent = formatEventDate(event.date);
-  if (timeEl) timeEl.textContent = `${event.start_time.slice(0, 5)} - ${event.end_time.slice(0, 5)}`;
+  if (timeEl) timeEl.textContent = formatWindow(event);
 
   // Pre-select role if event is single-role
   if (event.permitted_roles === 'Agent') {
@@ -590,7 +591,7 @@ async function triggerGpsCheck(isManualClick = true) {
     if (!geo.ok) {
       updateGpsIndicator(geo.code === 'OUTSIDE_GEOFENCE' ? 'warning' : 'error', geo.message);
       if (isManualClick) alert(geo.message);
-      return { ok: false, message: geo.message };
+      return { ok: false, message: geo.message, code: geo.code };
     }
 
     const note = geo.flags.length > 0 ? ' • ⚠️ Will be flagged for admin review' : '';
@@ -604,7 +605,7 @@ async function triggerGpsCheck(isManualClick = true) {
     if (isManualClick) {
       alert(err.message);
     }
-    return { ok: false, message: err.message };
+    return { ok: false, message: err.message, code: 'GPS_REQUIRED' };
   }
 }
 
@@ -623,32 +624,35 @@ function gpsFixForSubmit(position) {
 }
 
 /**
+ * Opens the in-app camera for a staff QR code
+ */
+function openStaffQrScanner() {
+  openInAppScanner({
+    title: 'Scan Staff QR Code',
+    subtitle: 'Align the physical QR code or staff phone screen in the viewfinder',
+    onScanSuccess: (decodedText) => {
+      // Only staff beacon QR codes (checkin.html links with host, window and signature) are accepted
+      try {
+        const url = new URL(decodedText, window.location.origin);
+        if (url.pathname.endsWith('/checkin.html') && url.searchParams.get('host') && url.searchParams.get('sig')) {
+          window.location.href = `/checkin.html${url.search}`;
+          return;
+        }
+      } catch (e) {}
+      showErrorState('Not a Staff QR Code', 'This is not an attendance QR code. Scan the live QR code shown on an authorized staff member\'s phone.');
+    }
+  });
+}
+
+/**
  * Setup In-App Scanner Buttons
  */
 function setupScannerAction() {
   const btnScan = document.getElementById('btnCheckinCameraScan');
   const btnErrorScan = document.getElementById('btnErrorScanQr');
 
-  const openScanner = () => {
-    openInAppScanner({
-      title: 'Scan Staff QR Code',
-      subtitle: 'Align the physical QR code or staff phone screen in the viewfinder',
-      onScanSuccess: (decodedText) => {
-        // Only staff beacon QR codes (checkin.html links with host, window and signature) are accepted
-        try {
-          const url = new URL(decodedText, window.location.origin);
-          if (url.pathname.endsWith('/checkin.html') && url.searchParams.get('host') && url.searchParams.get('sig')) {
-            window.location.href = `/checkin.html${url.search}`;
-            return;
-          }
-        } catch (e) {}
-        showErrorState('Not a Staff QR Code', 'This is not an attendance QR code. Scan the live QR code shown on an authorized staff member\'s phone.');
-      }
-    });
-  };
-
-  if (btnScan) btnScan.onclick = openScanner;
-  if (btnErrorScan) btnErrorScan.onclick = openScanner;
+  if (btnScan) btnScan.onclick = openStaffQrScanner;
+  if (btnErrorScan) btnErrorScan.onclick = openStaffQrScanner;
 }
 
 function updateGpsIndicator(status, message) {
@@ -737,7 +741,7 @@ function setupFormListeners() {
       }
 
       if (!checkinState.scanTicket || checkinState.scanTicket.expiresAt < Date.now()) {
-        showRejectionNotice('More than 10 minutes passed since you scanned. Scan the staff member\'s QR code again.');
+        showRejectionNotice('More than 10 minutes passed since you scanned. Scan the staff member\'s QR code again.', 'TICKET_EXPIRED');
         return;
       }
 
@@ -761,14 +765,14 @@ function setupFormListeners() {
           submitBtnText.textContent = 'Checking Your Location...';
           const gps = await triggerGpsCheck(false);
           if (!gps.ok) {
-            showRejectionNotice(gps.message || 'We could not verify your location. Tap "Retry GPS" and try again.');
+            showRejectionNotice(gps.message || 'We could not verify your location. Tap "Retry GPS" and try again.', gps.code || 'GPS_REQUIRED');
             resetSubmitButton();
             return;
           }
         } else {
           const geo = evaluateGeofence(checkinState.event, gpsFixForSubmit(position));
           if (!geo.ok) {
-            showRejectionNotice(geo.message);
+            showRejectionNotice(geo.message, geo.code);
             resetSubmitButton();
             return;
           }
@@ -819,7 +823,7 @@ function setupFormListeners() {
           } catch (e) {}
           showAttendancePass(result.data, { alreadyRecorded: Boolean(result.already_recorded) });
         } else {
-          showRejectionNotice(result.message || 'Validation failed. Please verify your details and retry.');
+          showRejectionNotice(result.message || 'Validation failed. Please verify your details and retry.', result.code);
         }
       } catch (err) {
         console.error('Online attendance submission failed:', err);
@@ -1051,21 +1055,46 @@ async function sharePassTicket(data) {
   window.open(waUrl, '_blank');
 }
 
+// Rejection codes a fresh staff QR scan fixes, and ones a new GPS reading can fix
+const SCAN_AGAIN_CODES = new Set([
+  'QR_EXPIRED', 'INVALID_SIGNATURE', 'SCAN_REQUIRED', 'INVALID_TICKET', 'TICKET_USED', 'TICKET_EXPIRED', 'HOST_NOT_AUTHORIZED'
+]);
+const RETRY_GPS_CODES = new Set(['GPS_REQUIRED', 'GPS_INACCURATE', 'GPS_STALE', 'OUTSIDE_GEOFENCE']);
+
 /**
- * Display Rejection Notice Modal / Banner
+ * Display Rejection Notice Modal, with the action that fixes the problem when there is one
+ * @param {string} errorMessage
+ * @param {string} [code] rejection code from the server or the local GPS check
  */
-function showRejectionNotice(errorMessage) {
+function showRejectionNotice(errorMessage, code = null) {
   const modal = document.getElementById('rejectionModal');
   const msgEl = document.getElementById('rejectionMessageText');
-  if (msgEl) msgEl.textContent = errorMessage;
-  if (modal) modal.classList.add('active');
-
   const btnClose = document.getElementById('btnRejectionClose');
-  if (btnClose) {
-    btnClose.onclick = () => {
-      modal.classList.remove('active');
+  const btnScan = document.getElementById('btnRejectionScanAgain');
+  const btnGps = document.getElementById('btnRejectionRetryGps');
+  if (msgEl) msgEl.textContent = errorMessage;
+
+  const offerScan = SCAN_AGAIN_CODES.has(code);
+  const offerGps = RETRY_GPS_CODES.has(code);
+  btnScan?.classList.toggle('is-hidden', !offerScan);
+  btnGps?.classList.toggle('is-hidden', !offerGps);
+
+  const close = () => modal.classList.remove('active');
+  if (btnClose) btnClose.onclick = close;
+  if (btnScan) {
+    btnScan.onclick = () => {
+      close();
+      openStaffQrScanner();
     };
   }
+  if (btnGps) {
+    btnGps.onclick = () => {
+      close();
+      triggerGpsCheck(true);
+    };
+  }
+
+  if (modal) modal.classList.add('active');
 }
 
 function escapeHtml(str) {

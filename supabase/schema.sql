@@ -594,8 +594,9 @@ DECLARE
     v_is_late BOOLEAN := false;
     v_now TIMESTAMPTZ := clock_timestamp();
     v_tz TEXT;
-    v_today DATE;
-    v_current_time TIME;
+    v_start_ts TIMESTAMPTZ;        -- check-in opens
+    v_end_ts TIMESTAMPTZ;          -- check-in closes (next day when end_time < start_time)
+    v_checkout_until TIMESTAMPTZ;  -- check-out allowed until the end of the day the event ends
     v_mode TEXT := UPPER(COALESCE(p_check_in_mode, ''));
     v_action TEXT := UPPER(COALESCE(p_action, 'CHECK_IN'));
     v_clean_phone TEXT := regexp_replace(COALESCE(p_phone_number, ''), '[^0-9]', '', 'g');
@@ -620,10 +621,13 @@ BEGIN
         RETURN attendance_reject(p_event_id, NULL, 'CHECKOUT_DISABLED', 'Check-out is not enabled for this event.', NULL, p_user_agent);
     END IF;
 
-    -- Event times are local to the event's timezone, not UTC
+    -- Event times are local to the event's timezone, not UTC.
+    -- An end time earlier than the start time means the event runs past midnight.
     v_tz := COALESCE(NULLIF(v_event.timezone, ''), 'Asia/Kolkata');
-    v_today := (v_now AT TIME ZONE v_tz)::DATE;
-    v_current_time := (v_now AT TIME ZONE v_tz)::TIME;
+    v_start_ts := (v_event.date + v_event.start_time) AT TIME ZONE v_tz;
+    v_end_ts := (v_event.date + v_event.end_time
+                 + CASE WHEN v_event.end_time < v_event.start_time THEN interval '1 day' ELSE interval '0' END) AT TIME ZONE v_tz;
+    v_checkout_until := (((v_end_ts AT TIME ZONE v_tz)::DATE + 1)::TIMESTAMP) AT TIME ZONE v_tz;
 
     -- 2. Role
     IF v_event.permitted_roles <> 'All' AND v_event.permitted_roles::text <> p_role THEN
@@ -699,11 +703,7 @@ BEGIN
         RETURN attendance_reject(p_event_id, v_member.id, 'SCAN_REQUIRED', 'Scan the QR code shown on a staff member''s phone to check in.', jsonb_build_object('mode', p_check_in_mode), p_user_agent);
     END IF;
 
-    -- 5. Date, time window, duplicates
-    IF v_event.date <> v_today THEN
-        RETURN attendance_reject(p_event_id, v_member.id, 'EVENT_DATE_MISMATCH', format('This event is scheduled for %s. Check-in is not open today.', v_event.date), NULL, p_user_agent);
-    END IF;
-
+    -- 5. Time window, duplicates
     SELECT * INTO v_existing FROM attendance WHERE event_id = p_event_id AND member_id = v_member.id;
 
     IF v_action = 'CHECK_IN' THEN
@@ -717,17 +717,24 @@ BEGIN
                 NULL, p_user_agent);
         END IF;
 
-        IF v_current_time < v_event.start_time THEN
-            RETURN attendance_reject(p_event_id, v_member.id, 'TIME_WINDOW_EARLY', format('Check-in has not started yet. Opens at %s.', to_char(v_event.start_time, 'HH12:MI AM')), NULL, p_user_agent);
+        IF v_now < v_start_ts THEN
+            RETURN attendance_reject(p_event_id, v_member.id, 'TIME_WINDOW_EARLY',
+                format('Check-in has not started yet. Opens at %s on %s.', to_char(v_event.start_time, 'HH12:MI AM'), to_char(v_event.date, 'DD Mon YYYY')),
+                NULL, p_user_agent);
         END IF;
-        IF v_current_time > v_event.end_time THEN
-            RETURN attendance_reject(p_event_id, v_member.id, 'TIME_WINDOW_CLOSED', format('Check-in window closed at %s.', to_char(v_event.end_time, 'HH12:MI AM')), NULL, p_user_agent);
+        IF v_now > v_end_ts THEN
+            RETURN attendance_reject(p_event_id, v_member.id, 'TIME_WINDOW_CLOSED',
+                format('Check-in closed at %s on %s.', to_char(v_end_ts AT TIME ZONE v_tz, 'HH12:MI AM'), to_char(v_end_ts AT TIME ZONE v_tz, 'DD Mon YYYY')),
+                NULL, p_user_agent);
         END IF;
 
-        v_is_late := v_current_time > v_event.start_time + make_interval(mins => v_event.late_grace_minutes);
+        v_is_late := v_now > v_start_ts + make_interval(mins => v_event.late_grace_minutes);
     ELSE
         IF v_existing.id IS NULL THEN
             RETURN attendance_reject(p_event_id, v_member.id, 'NOT_CHECKED_IN', 'You have not checked in to this event yet, so there is nothing to check out from.', NULL, p_user_agent);
+        END IF;
+        IF v_now > v_checkout_until THEN
+            RETURN attendance_reject(p_event_id, v_member.id, 'CHECKOUT_CLOSED', 'Check-out for this event has closed.', NULL, p_user_agent);
         END IF;
         IF v_existing.check_out_time IS NOT NULL THEN
             IF v_existing.check_out_time > v_now - c_retry_window THEN
@@ -869,11 +876,56 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
+-- ============================================================================
+-- ADMIN: REVIEW A CHECK-IN (usually a FLAGGED one)
+-- APPROVE marks it verified; REJECT removes it so the person can check in again properly.
+-- Both need a note, and the audit log keeps a copy of the record.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION admin_review_attendance(p_attendance_id UUID, p_decision TEXT, p_note TEXT)
+RETURNS JSONB AS $$
+DECLARE
+    v_row attendance%ROWTYPE;
+    v_decision TEXT := UPPER(COALESCE(p_decision, ''));
+    v_note TEXT := TRIM(COALESCE(p_note, ''));
+BEGIN
+    IF NOT is_admin() THEN
+        RETURN jsonb_build_object('success', false, 'code', 'NOT_ADMIN', 'message', 'Only administrators can review attendance.');
+    END IF;
+    IF v_decision NOT IN ('APPROVE', 'REJECT') THEN
+        RETURN jsonb_build_object('success', false, 'code', 'INVALID_DECISION', 'message', 'Choose Approve or Reject.');
+    END IF;
+    IF v_note = '' THEN
+        RETURN jsonb_build_object('success', false, 'code', 'NOTE_REQUIRED', 'message', 'Enter a note explaining the decision.');
+    END IF;
+
+    SELECT * INTO v_row FROM attendance WHERE id = p_attendance_id FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('success', false, 'code', 'NOT_FOUND', 'message', 'This attendance record no longer exists.');
+    END IF;
+
+    IF v_decision = 'APPROVE' THEN
+        UPDATE attendance
+        SET verification_status = 'VERIFIED',
+            verification_notes = concat_ws('; ', verification_notes, 'Approved by admin: ' || v_note)
+        WHERE id = p_attendance_id;
+    ELSE
+        DELETE FROM attendance WHERE id = p_attendance_id;
+    END IF;
+
+    INSERT INTO audit_logs (event_id, member_id, action, status, details)
+    VALUES (v_row.event_id, v_row.member_id, 'ADMIN_REVIEW_' || v_decision, 'SUCCESS',
+            jsonb_build_object('attendance_id', v_row.id, 'note', v_note, 'admin', auth.uid(), 'record', to_jsonb(v_row)));
+
+    RETURN jsonb_build_object('success', true, 'decision', v_decision);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
 -- Internal helpers are not callable from the API
 REVOKE EXECUTE ON FUNCTION host_qr_signature(UUID, TEXT, BIGINT, TEXT) FROM public, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION attendance_reject(UUID, UUID, TEXT, TEXT, JSONB, TEXT) FROM public, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION attendance_receipt(UUID, TEXT, BOOLEAN) FROM public, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION admin_mark_attendance(UUID, UUID, TEXT) FROM public, anon;
+REVOKE EXECUTE ON FUNCTION admin_review_attendance(UUID, TEXT, TEXT) FROM public, anon;
 
 -- Grant execution to anon and authenticated users
 GRANT EXECUTE ON FUNCTION submit_attendance(UUID, TEXT, TEXT, TEXT, UUID, UUID, TEXT, UUID, TEXT, DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, BIGINT, BOOLEAN, TEXT, TEXT) TO anon, authenticated;
@@ -881,6 +933,7 @@ GRANT EXECUTE ON FUNCTION redeem_host_scan(UUID, TEXT, BIGINT, TEXT, TEXT) TO an
 GRANT EXECUTE ON FUNCTION host_claim_device(UUID, TEXT, TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION host_stats(UUID, TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION admin_mark_attendance(UUID, UUID, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION admin_review_attendance(UUID, TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION calculate_haversine_distance TO anon, authenticated;
 
 -- ============================================================================

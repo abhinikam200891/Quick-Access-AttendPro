@@ -1157,6 +1157,114 @@
   color: #ffffff;
 }
 
+/* Divisions & branches manager */
+.org-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.org-add-row .form-control {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.org-add-row .org-code-input {
+  flex: 0 1 160px;
+}
+
+.org-division {
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: var(--radius-md, 10px);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+.org-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+}
+
+.org-division-row {
+  border-bottom: 1px solid var(--border-subtle, #e2e8f0);
+  padding-bottom: 10px;
+}
+
+.org-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.org-code {
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+
+.org-meta {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.org-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.org-branches {
+  list-style: none;
+  margin: 6px 0 8px;
+  padding: 0 0 0 16px;
+}
+
+.org-branches li + li {
+  border-top: 1px dashed var(--border-subtle, #e2e8f0);
+}
+
+.org-add-branch {
+  margin: 4px 0 0 16px;
+}
+
+.org-empty {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  padding: 4px 0;
+}
+
+/* Flagged check-in review */
+.review-details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 0 0 16px;
+  font-size: 0.9rem;
+}
+
+.review-details dt {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.review-details dd {
+  margin: 0;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.btn-review-flagged {
+  margin-top: 4px;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+}
+
 .live-status-pill.is-polling .pulse-indicator {
   background: #f59e0b;
 }

@@ -12,6 +12,7 @@
 import QRCode from 'qrcode';
 import { dbService } from './db-service.js';
 import { acquireBestPosition } from './haversine.js';
+import { clockLabel, getEventWindow } from './event-window.js';
 import {
   generateDynamicQrPayload,
   buildHostCheckInUrl,
@@ -357,71 +358,34 @@ async function launchBeacon(event, host) {
 }
 
 /**
- * Current date (YYYY-MM-DD) and minutes since midnight in the event's timezone,
- * the same clock the server uses to accept or reject check-ins
- */
-function nowInZone(timeZone) {
-  let parts;
-  try {
-    parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23'
-    }).formatToParts(new Date());
-  } catch (e) {
-    // Unknown timezone name: fall back to the phone's own clock
-    return nowInZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
-  }
-  const get = (type) => parts.find((p) => p.type === type)?.value;
-  return {
-    date: `${get('year')}-${get('month')}-${get('day')}`,
-    minutes: Number(get('hour')) * 60 + Number(get('minute'))
-  };
-}
-
-function toMinutes(time) {
-  const [h, m] = String(time || '0:0').split(':').map(Number);
-  return h * 60 + m;
-}
-
-function clockLabel(minutes) {
-  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
-}
-
-/**
  * Shows whether check-in is open right now, and covers the QR when it is not,
- * so attendees are not sent to a check-in the server will reject
+ * so attendees are not sent to a check-in the server will reject.
+ * Uses the same window rules as the server, including events that run past midnight.
  */
 function updateWindowStatus() {
   const event = hostState.event;
   if (!event) return;
 
-  const now = nowInZone(event.timezone || 'Asia/Kolkata');
-  const start = toMinutes(event.start_time);
-  const end = toMinutes(event.end_time);
+  const checkinWindow = getEventWindow(event);
+  const state = checkinWindow.state;
+  const nextDay = checkinWindow.overnight ? ' (next day)' : '';
 
-  let state;
   let value;
   let label;
   let overlayTitle = '';
-  if (now.date < event.date || (now.date === event.date && now.minutes < start)) {
-    state = 'waiting';
+  if (state === 'waiting') {
     value = 'Not open';
-    label = now.date < event.date ? `Opens ${event.date} at ${clockLabel(start)}` : `Opens at ${clockLabel(start)}`;
+    label = checkinWindow.isToday
+      ? `Opens at ${clockLabel(checkinWindow.start)}`
+      : `Opens ${event.date} at ${clockLabel(checkinWindow.start)}`;
     overlayTitle = 'Check-in not open yet';
-  } else if (now.date > event.date || now.minutes > end) {
-    state = 'closed';
+  } else if (state === 'closed') {
     value = 'Closed';
-    label = now.date > event.date ? `Ended on ${event.date}` : `Closed at ${clockLabel(end)}`;
+    label = `Closed at ${clockLabel(checkinWindow.end)}${nextDay}`;
     overlayTitle = 'Check-in has closed';
   } else {
-    state = 'open';
     value = 'Open';
-    label = `Until ${clockLabel(end)}`;
+    label = `Until ${clockLabel(checkinWindow.end)}${nextDay}`;
   }
 
   const box = document.getElementById('windowStatusBox');

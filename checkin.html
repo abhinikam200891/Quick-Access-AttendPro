@@ -321,7 +321,14 @@
         <p id="rejectionMessageText" class="rejection-card-msg">
           Validation failed.
         </p>
-        <button type="button" class="btn btn-danger btn-block" id="btnRejectionClose">
+        <!-- Shown for problems a new scan or a fresh GPS reading can fix -->
+        <button type="button" class="btn btn-primary btn-block is-hidden" id="btnRejectionScanAgain">
+          📷 Scan Again
+        </button>
+        <button type="button" class="btn btn-primary btn-block is-hidden" id="btnRejectionRetryGps">
+          🔄 Retry GPS
+        </button>
+        <button type="button" class="btn btn-secondary btn-block" id="btnRejectionClose" style="margin-top: 8px;">
           Review &amp; Try Again
         </button>
       </div>

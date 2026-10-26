@@ -1,13 +1,13 @@
 // Quick Access AttendPro Service Worker
-const CACHE_NAME = 'qa-attendpro-cache-v17';
+const CACHE_NAME = 'qa-attendpro-cache-v18';
+// Only files that exist at these paths after a build: scripts and styles get hashed
+// names under /assets/ and are cached on first use by the fetch handler below
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/admin.html',
   '/checkin.html',
-  '/css/common.css',
-  '/css/admin.css',
-  '/css/checkin.css',
+  '/host.html',
   '/assets/logo.png',
   '/assets/icon-192.png',
   '/assets/icon-512.png',
