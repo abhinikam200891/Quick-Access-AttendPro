@@ -1197,6 +1197,21 @@ function renderOrgStructure() {
     .map((division) => {
       const branches = state.branches.filter((b) => b.division_id === division.id);
       const divisionMembers = membersByDivision.get(division.id) || 0;
+      // Single standalone office like Head Office
+      const isStandalone = (branches.length === 1 && branches[0].name.trim().toLowerCase() === division.name.trim().toLowerCase()) ||
+                           (division.code === 'DIV-HEAD-OFFICE') ||
+                           (division.name.trim().toLowerCase() === 'head office');
+
+      if (isStandalone) {
+        return `
+          <section class="org-division org-division-standalone" style="padding: 12px 16px; margin-bottom: 12px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md);">
+            <div class="org-row org-division-row" style="margin: 0; padding: 0;">
+              ${nameCell('division', division, `${plural(divisionMembers, 'member')} • Standalone Office`)}
+              ${actions('division', division, divisionMembers)}
+            </div>
+          </section>`;
+      }
+
       const branchItems = branches.length
         ? branches.map((branch) => {
             const branchMembers = membersByBranch.get(branch.id) || 0;
@@ -1278,7 +1293,13 @@ function setupOrgStructureManager() {
     } else if (form.classList.contains('org-rename-form')) {
       const { type, id } = form.dataset;
       if (type === 'division') {
-        await runOrgChange(() => dbService.saveDivision({ id, name, code }), 'Division renamed.');
+        await runOrgChange(async () => {
+          await dbService.saveDivision({ id, name, code });
+          const standaloneBranch = state.branches.find((b) => b.division_id === id);
+          if (standaloneBranch) {
+            await dbService.saveBranch({ id: standaloneBranch.id, divisionId: id, name, code: standaloneBranch.code });
+          }
+        }, 'Division renamed.');
       } else {
         const branch = state.branches.find((b) => b.id === id);
         await runOrgChange(() => dbService.saveBranch({ id, divisionId: branch?.division_id, name, code }), 'Branch renamed.');
