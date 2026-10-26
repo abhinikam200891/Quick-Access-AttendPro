@@ -2142,8 +2142,13 @@ function setupEventListeners() {
         return;
       }
       const branches = await dbService.getBranches(divId);
-      memberBranchSelect.innerHTML = '<option value="">Select Branch</option>' +
-        branches.map((b) => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('');
+      if (branches.length === 1) {
+        memberBranchSelect.innerHTML = `<option value="${branches[0].id}">${escapeHtml(branches[0].name)}</option>`;
+        memberBranchSelect.value = branches[0].id;
+      } else {
+        memberBranchSelect.innerHTML = '<option value="">Select Branch</option>' +
+          branches.map((b) => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('');
+      }
     };
   }
 

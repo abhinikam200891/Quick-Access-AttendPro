@@ -336,6 +336,11 @@ function populateDivisions(divisions) {
       const branches = await dbService.getBranches(divisionId);
       if (branches.length === 0) {
         branchSelect.innerHTML = '<option value="">No branches under this division</option>';
+      } else if (branches.length === 1) {
+        branchSelect.innerHTML = `<option value="${branches[0].id}">${escapeHtml(branches[0].name)}</option>`;
+        branchSelect.value = branches[0].id;
+        branchSelect.disabled = false;
+        loadBranchMembers(branches[0].id);
       } else {
         branchSelect.innerHTML = '<option value="">-- Select Branch --</option>' +
           branches.map((b) => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('');
